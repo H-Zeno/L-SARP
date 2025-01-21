@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import supervision as sv
-from inference.models.yolo_world.yolo_world import YOLOWorld
+# from inference.models.yolo_world.yolo_world import YOLOWorld
 from ultralytics import YOLO, YOLOWorld
 from ultralytics.data.dataset import YOLODataset
 import cv2

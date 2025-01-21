@@ -75,7 +75,11 @@ GRIPPER_WIDTH = 0.03
 GRIPPER_HEIGHT = 0.03
 ADVANCED_AFFORDANCE = True
 FORCES = [8, 0, 0, 0, 0, 0]
-LOGGING_PATH = "../../logging_lightswitch_experiments/"
+WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOGGING_PATH = os.path.join(WORKSPACE_ROOT, "logging_lightswitch_experiments")
+
+# Create logging directory if it doesn't exist
+os.makedirs(LOGGING_PATH, exist_ok=True)
 
 ## TESTING PARAMETERS
 TEST_NUMBER = 8
