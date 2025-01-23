@@ -33,5 +33,5 @@ cmake==3.28.3
 supervision
 ultralytics==8.1.28
 semantic-kernel
-git+https://github.com/openai/CLIP.git
+clip @ git+https://github.com/openai/CLIP.git
 llama-index-core==0.10.45
