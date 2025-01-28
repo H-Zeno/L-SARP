@@ -35,4 +35,10 @@ ultralytics==8.1.28
 semantic-kernel==0.9.2b1
 clip @ git+https://github.com/openai/CLIP.git
 llama-index-core==0.10.45
+llama-index==0.10.45.post1
+llama-index-llms-azure-openai==0.1.10
+llama-index-embeddings-azure-openai==0.1.11
+llama-index-multi-modal-llms-azure-openai==0.1.4
 pydantic==2.1
+azure-core==1.31.0
+azure-identity==1.17.1
