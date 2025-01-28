@@ -9,78 +9,45 @@ from semantic_kernel.planners import (
 )
 from semantic_kernel.connectors.ai.open_ai.utils import get_tool_call_object
 
-from misc.scenes_enum import Scene
-from plugins.plugins_factory import PluginsFactory
-
-DEFAULT_PLUGINS = ["nav", "text", "sql", "image"]
 
 class RobotPlanner:
     def __init__(
         self, 
-        plugins_factory: PluginsFactory, 
-        path_to_data: Path, 
         kernel_service: AIServiceClientBase,
-        enabled_plugins: List[str]
+        enabled_plugins: List[str],
+        plugin_configs: dict
     ) -> None:
         """
-        Constructor
+        Constructor for the RobotPlanner class that handles plugin initialization and planning.
 
         Args:
-            plugins_factory (PluginsFactory): factory for plugins
-            path_to_data (Path): path to the folder containing the data for RAG/plugins
+            kernel_service (AIServiceClientBase): The AI service client (e.g. OpenAI) that will
+                be used by the semantic kernel for planning and execution.
+            enabled_plugins (List[str]): List of plugin names that should be enabled for the
+                current scene, e.g. ["nav", "text", "sql", "image"].
+            plugin_configs (dict): Configuration dictionary for plugins containing tuples of
+                (factory_function, arguments, kernel_name) for each plugin.
         """
-        self._plugins_factory = plugins_factory
-        self._path_to_data = path_to_data
         self._kernel_service = kernel_service
         self._enabled_plugins = enabled_plugins
-        self._kernel: Optional[Kernel] = None
-        self._plugins = {}
+        self._plugin_configs = plugin_configs
 
-    def set_scene(
-        self, scene_choice: Scene, nav_vis_path: Optional[Path] = None
-    ) -> None:
+    def set_kernel(self) -> None:
         """
-        Sets up the scene for the chatbot.
+        Sets up the kernel: adds the kernel services, the enabled plugins and the planner.
 
-        Args:
-            scene_choice (Scene): selected scene to be set up
-            nav_vis_path (Optional[Path], optional): path to the folder where the navigation
-                visualization should be saved.
         """
-        plugin_configs = {
-            "nav": (
-                self._plugins_factory.get_nav_plugin,
-                [self._path_to_data / f"{scene_choice.value}/nav_data/navmesh.txt", nav_vis_path],
-                "navigation"
-            ),
-            "text": (
-                self._plugins_factory.get_text_plugin,
-                [Path(f".TEXT_DIR/{scene_choice.value}"), self._path_to_data / f"{scene_choice.value}/text_data"],
-                "text"
-            ),
-            "sql": (
-                self._plugins_factory.get_sql_plugin,
-                [self._path_to_data / f"{scene_choice.value}/sql_data/sql_db_data.json", Path(f".SQL_DIR/{scene_choice.value}")],
-                "sql"
-            ),
-            "image": (
-                self._plugins_factory.get_image_plugin,
-                [Path(f".IMAGE_DIR/{scene_choice.value}"), self._path_to_data / f"{scene_choice.value}/img_data"],
-                "image"
-            )
-        }
-
         self._kernel = Kernel()
         self._kernel.add_service(self._kernel_service)
-
+        
+        # Add Enabled Plugins to the kernel
         for plugin_name in self._enabled_plugins:
-            if plugin_name in plugin_configs:
-                factory_func, args, kernel_name = plugin_configs[plugin_name]
+            if plugin_name in self._plugin_configs:
+                factory_func, args, kernel_name = self._plugin_configs[plugin_name]
                 plugin = factory_func(*args)
-                self._plugins[plugin_name] = plugin
                 self._kernel.add_plugin(plugin, plugin_name=kernel_name)
 
-        # Setup planner
+        # Set up planner
         options = FunctionCallingStepwisePlannerOptions(
             max_iterations=5,
             min_iteration_time_ms=2000,
@@ -105,7 +72,7 @@ class RobotPlanner:
             raise ValueError("You need to set the SK first")
 
         # Get the response from the AI
-        result = await self._planner.invoke(self._kernel, question)
-        return result.final_answer, result.chat_history[0].content
+        response = await self._planner.invoke(self._kernel, question)
+        return response.final_response, response.chat_history[0].content
 
         # Check out: get access/insight on the plan that was made (e.g. telemetry support)

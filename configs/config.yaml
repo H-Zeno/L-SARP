@@ -3,10 +3,17 @@
 # By default the config/user.yaml configuration file is used.
 
 # used for logging
-project_name: "template"
+project_name: "L-SARP"
 
 # used for naming purposes
-note: "note"
+note: "Language-based Scene Aware Robot Planner"
+
+robot_planner_settings:
+  active_scene: "APARTMENT_0" # needs to be in all caps, see misc/scenes_enum.py
+  task_instruction_mode: "offline_predefined_instruction" # possible modes: "online_live_instruction", "offline_predefined_instruction" 
+  path_to_scene_data: "data_scene/" # relative path to project_root_dir
+
+# We give the robot task, and then the robot needs to great a goal, subtasks, and plan its actions to achieve the goal
 
 robot_parameters:
   verbose: False
@@ -14,14 +21,12 @@ robot_parameters:
 # device on which to train
 device: "cuda"
 
-gpt_api_key: ""
-
 pre_scanned_graphs:
   base_fiducial_id: 52
   graph_frame_name_prefix: "filtered_fiducial_"
   floor: -0.1
   low_res: "24-10-17a"
-  high_res: "24-10-17a"
+  high_res: "room_high_res"
   masked: ""
 
 # paths are relative from project_root_directory
