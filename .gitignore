@@ -123,6 +123,7 @@ celerybeat.pid
 .env
 .venv
 .env_plugins
+.env_core_planner
 env/
 venv/
 ENV/

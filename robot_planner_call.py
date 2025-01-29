@@ -36,15 +36,18 @@ async def main():
     model_factory = OpenAiModelFactory(config_handler) # These model factories are used for the plugins (capabilities) of our robot
     #endregion Initializing Plugins
 
+    
     #region Kernel Services Setup (AI Model)
-    settings = dotenv_values(".env")
+    settings = dotenv_values(".env_core_planner")
+    
     kernel_service = OpenAIChatCompletion(
-        ai_model_id=settings["PLANNER_CORE_LLM_MODEL_NAME"],
-        api_key=settings["PLANNER_CORE_API_KEY"],
-        org_id=settings.get("PLANNER_CORE_ORG_ID"),
-        service_id="default",
-        default_headers={"api-key": settings["PLANNER_CORE_API_KEY"]} if settings.get("PLANNER_CORE_API_KEY") else None
+        ai_model_id=settings.get("ai_model_id"),
+        api_key=settings.get("api_key"),
+        org_id=settings.get("org_id"),
+        service_id="planner_core"
     )
+
+    
     #endregion Kernel Services Setup (AI Model)
 
     #region Scene and Plugin Setup
