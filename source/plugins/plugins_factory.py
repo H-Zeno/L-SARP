@@ -7,8 +7,8 @@ from plugins.text_plugin import TextPlugin
 from plugins.sql_plugin import SqlPlugin
 from plugins.image_plugin import ImagePlugin
 from plugins.nav_plugin import NavPlugin
-from core.config_handler import ConfigPrefix
-from core.interfaces import AbstractModelFactory, AbstractLlmChatFactory
+from planner_core.config_handler import ConfigPrefix
+from planner_core.interfaces import AbstractModelFactory, AbstractLlmChatFactory
 
 
 class PluginsFactory:
@@ -57,10 +57,10 @@ class PluginsFactory:
         Returns:
             ImagePlugin: instance of the image plugin
         """
-        chat = self._chat_model_factory.get_llm_chat()
         image_llm = self._model_factory.get_multimodal_llm_model(ConfigPrefix.IMAGES)
         image_embed = ClipEmbedding()
-        return ImagePlugin(image_llm, chat, image_embed, image_dir, persist_dir)
+        chat_llm = self._chat_model_factory.get_llm_chat()
+        return ImagePlugin(image_llm, chat_llm, image_embed, image_dir, persist_dir)
 
     def get_text_plugin(
         self, text_dir: Optional[Path] = None, persist_dir: Optional[Path] = None
@@ -75,10 +75,10 @@ class PluginsFactory:
         Returns:
             TextPlugin: instance of the text plugin
         """
-        chat = self._chat_model_factory.get_llm_chat()
-        text_llm = self._model_factory.get_llm_model(ConfigPrefix.TEXT)
+        llm_text = self._model_factory.get_llm_model(ConfigPrefix.TEXT)
         text_embed = self._model_factory.get_embed_model(ConfigPrefix.TEXT)
-        return TextPlugin(text_llm, text_embed, chat, text_dir, persist_dir)
+        llm_chat = self._chat_model_factory.get_llm_chat()
+        return TextPlugin(llm_text, text_embed, llm_chat, text_dir, persist_dir)
 
     def get_nav_plugin(
         self, navmesh_path: Path, vis_dir_path: Optional[Path] = None
@@ -93,5 +93,5 @@ class PluginsFactory:
         Returns:
             NavPlugin: instance of the navigation plugin
         """
-        chat = self._chat_model_factory.get_llm_chat()
-        return NavPlugin(navmesh_path, chat, vis_dir_path)
+        llm_nav = self._model_factory.get_llm_model(ConfigPrefix.NAVIGATION)
+        return NavPlugin(llm_nav, navmesh_path, vis_dir_path)

@@ -12,8 +12,8 @@ from llama_index.core.multi_modal_llms import MultiModalLLM
 
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
-from core.rag_document_loaders import load_image_documents, local_image_to_document
-from core.interfaces import AbstractLlmChat
+from planner_core.rag_document_loaders import load_image_documents, local_image_to_document
+from planner_core.interfaces import AbstractLlmChat
 from plugins.plugin_prompts import (
     IMAGE_FUN_PROMPT,
     IMAGE_IN_PROMPT,
@@ -27,7 +27,7 @@ logger = logging.getLogger("IMAGE")
 class ImagePlugin:
     def __init__(
         self,
-        vision_llm: MultiModalLLM,
+        mllm: MultiModalLLM,
         llm_chat: AbstractLlmChat,
         embed_model: MultiModalEmbedding,
         image_dir: Optional[Path] = None,
@@ -37,7 +37,7 @@ class ImagePlugin:
         Constructor
 
         Args:
-            vision_llm (BaseLLM): LLM model answering the queries based on the attached image
+            mllm (BaseLLM): Multimodal LLM model answering the queries based on the attached image
             llm_chat (AbstractLlmChat): LLM chat used for filter definition
             embed_model (MultiModalEmbedding): multimodal embedding model
             image_dir (optional, Path): path to a directory in which the image data is stored
@@ -48,7 +48,7 @@ class ImagePlugin:
             None
         """
         self._embed_model: MultiModalEmbedding = embed_model
-        self._llm: MultiModalLLM = vision_llm
+        self._mllm: MultiModalLLM = mllm
         self._rooms: Set[str] = set()
         self._index: BaseIndex = self._get_index(persist_dir, image_dir)
         self._llm_chat: AbstractLlmChat = llm_chat
@@ -67,13 +67,13 @@ class ImagePlugin:
             str: answer from the LLM
         """
         logger.info(f"Query: {query}")
-        retriever = self._get_retiever(query)  # includes a filter
+        retriever = self._get_retriever(query)  # includes a filter
         img_nodes = retriever.retrieve(query)
         retrieved_img_path = img_nodes[0].metadata["file_path"]
         logger.info(f"Retrieved image: {retrieved_img_path}")
 
         img_doc = local_image_to_document(retrieved_img_path)
-        complete_response = self._llm.complete(
+        complete_response = self._mllm.complete(
             prompt=query
             + " Do not use 'left' and 'right' when describing the positions, since it depeneds on the point of view.",
             image_documents=[img_doc],
@@ -135,7 +135,7 @@ class ImagePlugin:
 
         return image_index
 
-    def _get_retiever(self, query: str) -> BaseRetriever:
+    def _get_retriever(self, query: str) -> BaseRetriever:
         """
         Creates a retriever, with a metadata filter if the query concerns
         a specific room.

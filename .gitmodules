@@ -1,0 +1,3 @@
+[submodule "source/Mask3D"]
+	path = source/Mask3D
+	url = git@github.com:JonasSchult/Mask3D.git

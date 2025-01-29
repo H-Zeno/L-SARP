@@ -69,7 +69,7 @@ class RobotPlanner:
             Tuple[str, str]: final answer to the question and the function calls made
         """
         if self._kernel is None:
-            raise ValueError("You need to set the SK first")
+            raise ValueError("You need to set the Semanric Kernel first")
 
         # Get the response from the AI
         response = await self._planner.invoke(self._kernel, question)

@@ -1,7 +1,7 @@
 from enum import Enum
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from dotenv import dotenv_values
 
 
@@ -14,6 +14,7 @@ class ConfigPrefix(Enum):
     NAVIGATION: str = "NAV"
     SQL: str = "SQL"
     CHAT: str = "CHAT"
+    PLANNER_CORE: str = "PLANNER_CORE"
 
 
 @dataclass
@@ -21,7 +22,7 @@ class Config:
     """
     Dataclass storing configuration for a single plugin/chat.
     """
-    api_key: Optional[str] = None,
+    api_key: Optional[str] = None
     endpoint: Optional[str] = None
     llm_deployment: Optional[str] = None
     llm_model: Optional[str] = None
@@ -29,6 +30,8 @@ class Config:
     embed_model: Optional[str] = None
     api_version: Optional[str] = None
     temperature: float = 0.1
+    llm_service_provider: Optional[str] = None
+    org_id: Optional[str] = None
 
 
 class ConfigHandler:
@@ -39,7 +42,7 @@ class ConfigHandler:
         Args:
             env_file (Path): path to the dotenv file containing configuration values
         """
-        self._config: Dict[str, str | None] = dotenv_values(env_file)
+        self._config: Dict[str, Union[str, None]] = dotenv_values(env_file)
         self._retrieved_configs: Dict[str, Config] = {}
 
     def get_config(self, params_type: ConfigPrefix) -> Config:
@@ -52,7 +55,7 @@ class ConfigHandler:
         Returns:
             Config: configuration for the plugin/chat
         """
-        if params_type.value not in self._retrieved_configs:
+        if params_type.value not in self._retrieved_configs: 
             config = Config(
                 api_key=self._config.get(f"{params_type.value}_API_KEY", None),
                 endpoint=self._config.get(f"{params_type.value}_ENDPOINT", None),
@@ -68,6 +71,8 @@ class ConfigHandler:
                 ),
                 api_version=self._config.get(f"{params_type.value}_API_VERSION", None),
                 temperature=self._config.get(f"{params_type.value}_TEMPERATURE", 0.1),
+                llm_service_provider=self._config.get(f"{params_type.value}_LLM_SERVICE_PROVIDER", None),
+                org_id=self._config.get(f"{params_type.value}_ORG_ID", None),
             )
 
             self._retrieved_configs[params_type.value] = config

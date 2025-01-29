@@ -32,7 +32,7 @@ from llama_index.core import (
 
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
-from core.rag_sql_loader import load_sql_database, get_dict_to_index
+from planner_core.rag_sql_loader import load_sql_database, get_dict_to_index
 from plugins.plugin_prompts import (
     SQL_FUN_PROMPT,
     SQL_IN_PROMPT,

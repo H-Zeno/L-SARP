@@ -14,8 +14,8 @@ from llama_index.core import (
     load_index_from_storage,
 )
 
-from core.interfaces import AbstractLlmChat
-from core.rag_document_loaders import load_text_documents
+from planner_core.interfaces import AbstractLlmChat
+from planner_core.rag_document_loaders import load_text_documents
 from plugins.plugin_prompts import (
     TEXT_FUN_PROMPT,
     TEXT_IN_PROMPT,
@@ -29,7 +29,7 @@ logger = logging.getLogger("TEXT")
 class TextPlugin:
     def __init__(
         self,
-        llm: BaseLLM,
+        llm_text: BaseLLM,
         embed_model: BaseEmbedding,
         llm_chat: AbstractLlmChat,
         txt_dir: Optional[Path] = None,
@@ -54,7 +54,7 @@ class TextPlugin:
             None
         """
         self._top_k: int = top_k
-        self._llm: BaseLLM = llm
+        self._llm_text: BaseLLM = llm_text #BaseLLM from LlamaIndex, especially made for RAG
         self._embed_model: BaseEmbedding = embed_model
         self._llm_chat: AbstractLlmChat = llm_chat
         self._rooms: Set[str] = set()
@@ -143,7 +143,7 @@ class TextPlugin:
         if response == "None" or response not in self._rooms:
             logger.info("No metadata filter")
             return self._index.as_query_engine(
-                llm=self._llm,
+                llm=self._llm_text,
                 embed_model=self._embed_model,
                 similarity_top_k=self._top_k,
             )
@@ -153,7 +153,7 @@ class TextPlugin:
                 filters=[ExactMatchFilter(key="room_name", value=response)]
             )
             return self._index.as_query_engine(
-                llm=self._llm,
+                llm=self._llm_text,
                 embed_model=self._embed_model,
                 similarity_top_k=self._top_k,
                 filters=filters,

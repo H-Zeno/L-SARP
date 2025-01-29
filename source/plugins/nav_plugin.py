@@ -8,8 +8,8 @@ import igl
 
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
-from core.interfaces import AbstractLlmChat
-from misc.navmesh_vis import visualize_navmesh_3d
+from planner_core.interfaces import AbstractLlmChat
+from utils.navmesh_vis import visualize_navmesh_3d
 from plugins.plugin_prompts import (
     NAV_FUN_ACTUAL_PROMPT,
     NAV_IN_PROMPT,
@@ -25,25 +25,25 @@ logger = logging.getLogger("NAV")
 class NavPlugin:
     def __init__(
         self,
+        llm: AbstractLlmChat,
         navmesh_filepath: Path,
-        llm_chat: AbstractLlmChat,
         vis_dirpath: Optional[Path] = None,
     ) -> None:
         """
         Constructor
 
         Args:
+            llm_chat (AbstractLlmChat): LLM chat used for positions extraction
             navmesh_filepath (Path): path to the file with navigation mesh
                 (compatible with Habitat Sim format)
-            llm_chat (AbstractLlmChat): LLM chat used for positions extraction
             vis_dirpath (optional, Path): path to a directory in which the visualization
                 of the resulting navigable paths should be stored
 
         Returns:
             None
         """
+        self._llm: AbstractLlmChat = llm
         self._vertices, self._faces = geodesic.read_mesh_from_file(navmesh_filepath)
-        self._llm_chat: AbstractLlmChat = llm_chat
         self._vis_dirpath: Optional[Path] = vis_dirpath
 
     @kernel_function(description=NAV_FUN_ACTUAL_PROMPT, name="NavigationActual")
@@ -117,7 +117,7 @@ class NavPlugin:
             np.ndarray: 3D coordinates of the objects
         """
         logger.info(f"Natural language description: {natural_language_descr}")
-        response = self._llm_chat.get_response(
+        response = self._llm.get_response(
             NAV_SYSTEM_PROMPT, natural_language_descr
         )
         logger.info(f"Retrieved positions: {response}")

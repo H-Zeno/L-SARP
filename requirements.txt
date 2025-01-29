@@ -1,12 +1,12 @@
 PyYAML==6.0.1
 openai==1.14.0
-torch==2.0.1
+torch==2.2.0
 numpy==1.25
 wandb==0.15.8
 tqdm==4.66.1
 opencv-python==4.8.0.74
 pandas==2.0.3
-torchvision==0.15.2
+torchvision==0.17.0
 bosdyn-api==3.3.0
 bosdyn-choreography-client==3.3.0
 bosdyn-choreography-protos==3.3.0
@@ -17,7 +17,7 @@ black==24.3.0
 isort==5.12.0
 pylint==2.17.5
 open3d==0.16.0
-Pillow==10.0.0
+Pillow==10.2.0
 scipy==1.10.1
 matplotlib==3.7.2
 apriltag==0.0.16
@@ -39,6 +39,9 @@ llama-index==0.10.45.post1
 llama-index-llms-azure-openai==0.1.10
 llama-index-embeddings-azure-openai==0.1.11
 llama-index-multi-modal-llms-azure-openai==0.1.4
+llama-index-embeddings-clip==0.1.5
 pydantic==2.1
 azure-core==1.31.0
 azure-identity==1.17.1
+pygeodesic==0.1.9
+libigl==2.5.1

@@ -5,14 +5,15 @@ import yaml
 import logging
 import logging.config
 from pathlib import Path
+from dotenv import dotenv_values
 
 from semantic_kernel.utils.settings import openai_settings_from_dot_env
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 
 from planner_core.robot_planner import RobotPlanner
 from planner_core.config_handler import ConfigHandler
-from planner_core.example_implementations import ExampleChatModelFactory, ExampleModelFactory
-from misc.scenes_enum import Scene
+from planner_core.model_factories import OpenAiChatModelFactory, OpenAiModelFactory
+from configs.scenes_enum import Scene
 from plugins.plugins_factory import PluginsFactory
 #endregion
 
@@ -28,24 +29,21 @@ with open("configs/config.yaml", "r") as f:
 #endregion
 
 async def main():
-    #region Initialization and Settings
+    #region Initializing Plugins
     plugins_dotenv = Path(".env_plugins")
     config_handler = ConfigHandler(plugins_dotenv)
-    chat_model_factory = ExampleChatModelFactory(config_handler)
-    model_factory = ExampleModelFactory(config_handler)
-  
-    settings = openai_settings_from_dot_env(plugins_dotenv)
-    if not settings.get("ai_model_id") or not settings.get("api_key"):
-        raise ValueError("Missing required OpenAI settings in .env file")
-    #endregion Initialization and Settings
+    chat_model_factory = OpenAiChatModelFactory(config_handler)
+    model_factory = OpenAiModelFactory(config_handler) # These model factories are used for the plugins (capabilities) of our robot
+    #endregion Initializing Plugins
 
     #region Kernel Services Setup (AI Model)
+    settings = dotenv_values(".env")
     kernel_service = OpenAIChatCompletion(
-        ai_model_id=settings["ai_model_id"],
-        api_key=settings["api_key"],
-        org_id=settings.get("org_id"),
+        ai_model_id=settings["PLANNER_CORE_LLM_MODEL_NAME"],
+        api_key=settings["PLANNER_CORE_API_KEY"],
+        org_id=settings.get("PLANNER_CORE_ORG_ID"),
         service_id="default",
-        default_headers={"api-key": settings["api_key"]} if settings.get("endpoint") else None
+        default_headers={"api-key": settings["PLANNER_CORE_API_KEY"]} if settings.get("PLANNER_CORE_API_KEY") else None
     )
     #endregion Kernel Services Setup (AI Model)
 
