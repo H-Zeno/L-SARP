@@ -155,14 +155,14 @@ def project_points_bbox(points_3d, extrinsics, intrinsics, width, height, bbox, 
     
     return valid_image_points, valid_points_3d
 
-def detections_to_bboxes(points, detections):
+def detections_to_bboxes(points, detections, threshold=0.5):
     bboxes_3d = []
     for file, _, confidence, bbox in detections:
         intrinsics, extrinsics = parse_json(file + ".json")
         image = cv2.imread(file + ".jpg")
         width, height = image.shape[1], image.shape[0]
 
-        if confidence > 0.8:
+        if confidence > threshold:
             bbox = np.array([bbox[0], bbox[1], bbox[2], bbox[3]])
             _, points_3d = project_points_bbox(points, extrinsics, intrinsics, width, height, bbox)
             # TODO: where should I put this sanity check?

@@ -1,13 +1,6 @@
 from ultralytics import YOLO
 from ultralytics.utils.plotting import plot_results
 from PIL import Image
-import cv2
-from sahi import AutoDetectionModel
-from sahi.predict import get_prediction, get_sliced_prediction, predict
-from sahi.utils.cv import read_image
-from sahi.utils.file import download_from_url
-from sahi.utils.yolov8 import download_yolov8s_model
-
 
 def train(model, config, data, vis_block=False):
 

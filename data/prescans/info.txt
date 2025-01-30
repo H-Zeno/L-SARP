@@ -1,0 +1,1 @@
+place your prescans in here, this is also the MASK3D detections are stored if u choose to use scene graphs 

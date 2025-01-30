@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 import supervision as sv
-# from inference.models.yolo_world.yolo_world import YOLOWorld
 from ultralytics import YOLO, YOLOWorld
 from ultralytics.data.dataset import YOLODataset
 import cv2
@@ -11,8 +10,8 @@ from utils.object_detetion import BBox
 def _filter_detections_YOLOWorld(detections):
 
     # squaredness filter
-    squaredness = (np.minimum(detections.xyxy[:,2] -detections.xyxy[:,0], detections.xyxy[:,3] -detections.xyxy[:,1])/
-                   np.maximum(detections.xyxy[:,2] -detections.xyxy[:,0], detections.xyxy[:,3] -detections.xyxy[:,1]))
+    squaredness = (np.minimum(detections.xyxy[:,2] - detections.xyxy[:,0], detections.xyxy[:,3] - detections.xyxy[:,1])/
+                   np.maximum(detections.xyxy[:,2] - detections.xyxy[:,0], detections.xyxy[:,3] - detections.xyxy[:,1]))
 
     idx_dismiss = np.where(squaredness < 0.95)[0]
 

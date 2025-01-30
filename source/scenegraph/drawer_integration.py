@@ -215,7 +215,7 @@ def register_light_switches(dir_path, vis_block=False, transform=False):
             img_path = os.path.join(dir_path, image_name)
             image = cv2.imread(img_path)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            detections += [predict_light_switches(image, image_name[:-4], vis_block=True)]
+            detections += [predict_light_switches(image, image_name[:-4], vis_block=False)]
         with open(os.path.join(dir_path, 'detections_lightswitch.pkl'), 'wb') as f:
             pickle.dump(detections, f)
 
