@@ -95,8 +95,8 @@ $SPOTLIGHT/data/aligned_point_clouds
 
 1. Clone and set up Mask3D:
    ```bash
-   cd $SPOTLIGHT/source/
-   git clone https://github.com/behretj/Mask3D.git
+   cd $LSARP/source/
+   git submodule add https://github.com/behretj/Mask3D.git
    mkdir Mask3D/checkpoints
    cd Mask3D/checkpoints
    wget "https://zenodo.org/records/10422707/files/mask3d_scannet200_demo.ckpt"
@@ -106,20 +106,24 @@ $SPOTLIGHT/data/aligned_point_clouds
 2. Run the Mask3D Docker container:
    ```bash
    docker pull rupalsaxena/mask3d_docker:latest
-   docker run --gpus all -it -v /home:/home -w $SPOTLIGHT/source/Mask3D rupalsaxena/mask3d_docker:latest
+   docker run --gpus all -it \
+     -v $LSARP:$LSARP \
+     -e LSARP=$LSARP \
+     -w $LSARP/source/Mask3D \
+     rupalsaxena/mask3d_docker:latest
    ```
 
 3. Inside the container, process the high-resolution point cloud:
    ```bash
-   python mask3d.py --seed 42 --workspace $SPOTLIGHT/data/prescans/<high_res_name>
-   chmod -R 777 $SPOTLIGHT/data/prescans/<high_res_name>
+   python mask3d.py --seed 42 --workspace $LSARP/data/prescans/high_res
+   chmod -R 777 $LSARP/data/prescans/high_res
    ```
 
 4. Update permissions and move processed files:
    ```bash
-   cp $SPOTLIGHT/mask3d_label_mapping.csv $SPOTLIGHT/data/prescans/<high_res_name>/mask3d_label_mapping.csv
-   cp $SPOTLIGHT/data/aligned_point_clouds/<high_res_name>/pose/icp_tform_ground.txt $SPOTLIGHT/data/prescans/<high_res_name>/icp_tform_ground.txt
-   cp $SPOTLIGHT/data/prescans/<high_res_name>/pcd.ply $SPOTLIGHT/data/prescans/<high_res_name>/mesh.ply
+   cp $LSARP/mask3d_label_mapping.csv $LSARP/data/prescans/<high_res_name>/mask3d_label_mapping.csv
+   cp $LSARP/data/aligned_point_clouds/<high_res_name>/pose/icp_tform_ground.txt $LSARP/data/prescans/<high_res_name>/icp_tform_ground.txt
+   cp $LSARP/data/prescans/<high_res_name>/pcd.ply $LSARP/data/prescans/<high_res_name>/mesh.ply
    ```
 
 ---
@@ -139,14 +143,14 @@ Refer to the [Spot-Compose repository](https://github.com/oliver-lemke/spot-comp
 ## Update python path
 Just to make sure we don't run into pathing/ import issues
 ```bash
-export PYTHONPATH=$SPOTLIGHT:$SPOTLIGHT/source:\$PYTHONPATH
+export PYTHONPATH=$LSARP:$LSARP/source:\$PYTHONPATH
 ```
 
 ## Extracting OpenMask Features
 
 In case you are using the OpenMask functionalities:
 ```bash
-python3 $SPOTLIGHT/source/utils/openmask_interface.py
+python3 $LSARP/source/utils/openmask_interface.py
 ```
 
 ## Configuration File
@@ -175,9 +179,9 @@ This is an over view for workstation networking. Again, this information can als
 
 On the workstation run 
 ```bash
-   $SPOTLIGHT/shells/ubuntu_routing.sh
+   $LSARP/shells/ubuntu_routing.sh
 ```
-(or $SPOTLIGHT/shells/mac_routing.sh depending on your workstation operating system).
+(or $LSARP/shells/mac_routing.sh depending on your workstation operating system).
 
 **Short Explanation for the curious**: This shell script has only a single line of code: sudo ip route add 192.168.50.0/24 via <local NUC IP>
 

@@ -26,7 +26,7 @@ pre_scanned_graphs:
   graph_frame_name_prefix: "filtered_fiducial_"
   floor: -0.1
   low_res: "24-10-17a"
-  high_res: "room_high_res"
+  high_res: "high_res"
   masked: ""
 
 # paths are relative from project_root_directory
