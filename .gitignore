@@ -170,3 +170,6 @@ cython_debug/
 /.environment/
 /configs/user.yaml
 /.environment.yaml
+.TEXT_DIR/
+.IMAGE_DIR/
+.SQL_DIR/

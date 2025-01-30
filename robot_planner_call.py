@@ -6,8 +6,8 @@ import logging
 import logging.config
 from pathlib import Path
 from dotenv import dotenv_values
+from datetime import datetime
 
-from semantic_kernel.utils.settings import openai_settings_from_dot_env
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 
 from planner_core.robot_planner import RobotPlanner
@@ -35,23 +35,21 @@ async def main():
     chat_model_factory = OpenAiChatModelFactory(config_handler)
     model_factory = OpenAiModelFactory(config_handler) # These model factories are used for the plugins (capabilities) of our robot
     #endregion Initializing Plugins
-
     
     #region Kernel Services Setup (AI Model)
     settings = dotenv_values(".env_core_planner")
-    
+
     kernel_service = OpenAIChatCompletion(
         ai_model_id=settings.get("ai_model_id"),
         api_key=settings.get("api_key"),
         org_id=settings.get("org_id"),
         service_id="planner_core"
     )
-
-    
     #endregion Kernel Services Setup (AI Model)
 
     #region Scene and Plugin Setup
-    active_scene = Scene(config["robot_planner_settings"]["active_scene"])
+    active_scene_name = config["robot_planner_settings"]["active_scene"]
+    active_scene = Scene[active_scene_name]
     if active_scene not in Scene:
         raise ValueError(f"Selected active scene '{active_scene}' (mentioned in config.yaml) not found in Scene enum")
     logger_main.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
@@ -113,7 +111,9 @@ async def main():
     # Process Offline Predefined Instructions (good for testing and benchmarking)
     if config["robot_planner_settings"]["task_instruction_mode"] == "offline_predefined_instruction":
         instructions_path = path_to_scene_data / "instructions.json"
-        responses_path = path_to_scene_data / "responses.json"
+        # Create timestamp for the responses file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        responses_path = path_to_scene_data / f"responses_{timestamp}.json"
         responses = {}
         separator = "======================="
 
@@ -155,8 +155,10 @@ async def main():
                 logger_plugins.info("---")
                 logger_plugins.info(generated_plan)
 
-                responses[nr] = final_response
-                responses[nr]["plan"] = generated_plan
+                responses[nr] = {
+                    "response": final_response,
+                    "plan": generated_plan
+                }
 
                 with responses_path.open("w") as file:
                     json.dump(responses, file, indent=4)

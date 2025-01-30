@@ -28,10 +28,10 @@ NAV_SYSTEM_PROMPT = (
 )
 
 # Text document module
-TEXT_FUN_PROMPT = "If the query concerns two rooms or more, it can answer questions regarding visual data about the scenes, such as appearances of rooms and objects, and about spatial relations between the objects (such as A is on B, A is next to B etc.). It does not provide any quantitative or positional data, such as the 3D positions of objects."
-TEXT_IN_PROMPT = "Query asking for a visual data of an objects, rooms or scenes."
-TEXT_OUT_PROMPT = "String being the visual data of the objects, rooms or scenes."
-TEXT_METADATA_PROMPT = "Your job is to decide whether the given query concerns a specific room. If yes, return ONLY the name of the room from the pool {}. If not, or if the room name is not close to any of the available ones, return 'None'."
+TEXT_FUN_PROMPT = "This function can be used to query our text database. The text database includes information about the appearance, spatial relationships (A is on B, A is next to B etc.), rooms and objects in the scene. Important: This text query function does not provide any exact quantitative or positional data, such as the exact 3D positions of objects."
+TEXT_IN_PROMPT = "A query (string) asking for information of potential objects or rooms in the scene."
+TEXT_OUT_PROMPT = "A string output containing the data from the text query  of the scene."
+TEXT_METADATA_ROOM_PROMPT = "If this query concerns a specific room, return ONLY the name of this room from the list '{}'. If not, or if the room name is not close to any of the available ones, return 'None'."
 
 # Image document module
 IMAGE_FUN_PROMPT = "If the query concerns exactly one room, it can answer questions regarding the spatial relationships between objects within this room (such as A is on B, A is under B), count the number of visible objects or describe the surroundings in terms of visual appearance. It does not provide any 3D positions of objects nor the cumulative data about more than one room."

@@ -18,7 +18,7 @@ class SceneConfig:
 
 class Scene(Enum):
     TEST_VIRTUAL_SCENE = SceneConfig("test_virtual_scene", ["nav", "text"])
-    APARTMENT_0 = SceneConfig("apartment_0")
+    APARTMENT_0 = SceneConfig("apartment_0", ["text"])
     APARTMENT_1 = SceneConfig("apartment_1")
     APARTMENT_2 = SceneConfig("apartment_2")
     ROOM_0 = SceneConfig("room_0")
@@ -30,7 +30,7 @@ class Scene(Enum):
     OFFICE_4 = SceneConfig("office_4")
     HOTEL_0 = SceneConfig("hotel_0")
     FRL_APARTMENT_0 = SceneConfig("frl_apartment_0")
-    FRL_APARTMENT_1 = SceneConfig("frl_apartment_1")
+    FRL_APARTMENT_1 = SceneConfig("frl_a`partment_1")
 
     @property
     def value(self) -> str:

@@ -20,7 +20,7 @@ from plugins.plugin_prompts import (
     TEXT_FUN_PROMPT,
     TEXT_IN_PROMPT,
     TEXT_OUT_PROMPT,
-    TEXT_METADATA_PROMPT,
+    TEXT_METADATA_ROOM_PROMPT,
 )
 
 logger = logging.getLogger("TEXT")
@@ -137,7 +137,7 @@ class TextPlugin:
             BaseQueryEngine: query engine with the metadata filter if the query is about
             specific rooms
         """
-        system_msg = TEXT_METADATA_PROMPT.format(self._rooms)
+        system_msg = TEXT_METADATA_ROOM_PROMPT.format(self._rooms)
         response = self._llm_chat.get_response(system_msg, query)
 
         if response == "None" or response not in self._rooms:

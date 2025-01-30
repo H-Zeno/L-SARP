@@ -7,8 +7,10 @@ from semantic_kernel.planners import (
     FunctionCallingStepwisePlanner,
     FunctionCallingStepwisePlannerOptions,
 )
-from semantic_kernel.connectors.ai.open_ai.utils import get_tool_call_object
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RobotPlanner:
     def __init__(
@@ -69,10 +71,20 @@ class RobotPlanner:
             Tuple[str, str]: final answer to the question and the function calls made
         """
         if self._kernel is None:
-            raise ValueError("You need to set the Semanric Kernel first")
+            raise ValueError("You need to set the Semantic Kernel first")
 
-        # Get the response from the AI
-        response = await self._planner.invoke(self._kernel, question)
-        return response.final_response, response.chat_history[0].content
+        try:
+            # Get the response from the AI
+            response = await self._planner.invoke(self._kernel, question)
+            
+            # Make sure we have a valid response
+            if response and hasattr(response, 'final_answer'):
+                return response.final_answer, response.chat_history[0].content if response.chat_history else ""
+            else:
+                raise ValueError("Invalid response format from planner")
+            
+        except Exception as e:
+            logger.error(f"Error during planner invocation: {str(e)}")
+            raise RuntimeError(f"Planner failed to process the question: {str(e)}")
 
         # Check out: get access/insight on the plan that was made (e.g. telemetry support)
