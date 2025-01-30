@@ -156,6 +156,7 @@ async def main():
                 logger_plugins.info(generated_plan)
 
                 responses[nr] = {
+                    "question": instruction,
                     "response": final_response,
                     "plan": generated_plan
                 }
