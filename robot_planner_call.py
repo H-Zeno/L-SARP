@@ -40,9 +40,9 @@ async def main():
     settings = dotenv_values(".env_core_planner")
 
     kernel_service = OpenAIChatCompletion(
-        ai_model_id=settings.get("ai_model_id"),
-        api_key=settings.get("api_key"),
-        org_id=settings.get("org_id"),
+        ai_model_id=settings.get("AI_MODEL_ID"),
+        api_key=settings.get("API_KEY"),
+        org_id=settings.get("ORG_ID"),
         service_id="planner_core"
     )
     #endregion Kernel Services Setup (AI Model)
@@ -54,7 +54,6 @@ async def main():
         raise ValueError(f"Selected active scene '{active_scene}' (mentioned in config.yaml) not found in Scene enum")
     logger_main.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
 
-    # Define plugin configurations (based on the scene)
     path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
     if not path_to_scene_data.exists():
         raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
@@ -107,48 +106,61 @@ async def main():
     except Exception as e:
         logger_main.error(f"Failed to initialize robot planner: {str(e)}")
         raise
-
-    # Process Offline Predefined Instructions (good for testing and benchmarking)
-    if config["robot_planner_settings"]["task_instruction_mode"] == "offline_predefined_instruction":
-        instructions_path = path_to_scene_data / "instructions.json"
+    ### Online Live Instruction ###
+    if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
+        initial_prompt = f"""
+        I'm your AI assistant for the {active_scene.value} scene. I can help you:
+        - Navigate the environment
+        - Understand the scene
+        - Execute tasks and actions
+        - Process multimodal inputs
+        
+        What goal would you like me to help you achieve?
+        """
+        pass
+    
+    ### Offline Predefined Goals ###
+    elif config["robot_planner_settings"]["task_instruction_mode"] == "offline_predefined_instruction":
+        # Process existing predefined goals
+        goals_path = path_to_scene_data / "goals.json"
         # Create timestamp for the responses file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         responses_path = path_to_scene_data / f"responses_{timestamp}.json"
         responses = {}
         separator = "======================="
 
-        # Load the predefined instructions and potential responses (if already generated)
+        # Load the predefined goals and potential responses (if already generated)
         try:
-            if not instructions_path.exists():
-                raise FileNotFoundError(f"Instructions file not found at {instructions_path}")
+            if not goals_path.exists():
+                raise FileNotFoundError(f"Goals file not found at {goals_path}")
             
-            with open(instructions_path, "r") as file:
+            with open(goals_path, "r") as file:
                 try:
-                    instructions = json.load(file)
+                    goals = json.load(file)
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON format in instructions file: {e}")
+                    raise ValueError(f"Invalid JSON format in goals file: {e}")
 
             if responses_path.exists():
                 with responses_path.open("r") as file:
                     responses = json.load(file)
 
         except Exception as e:
-            logger_main.error(f"Error loading instructions: {e}")
+            logger_main.error(f"Error loading goals: {e}")
             raise
         
-        # Handle each Offline Predefined Instruction
-        for nr, ins in instructions.items():
+        # Handle each Offline Predefined Goal
+        for nr, goal in goals.items():
             if nr in responses:
                 continue
-            instruction = f"{nr}. {ins}"
+            goal_text = f"{nr}. {goal}"
 
             logger_plugins.info(separator)
-            logger_plugins.info(instruction)
+            logger_plugins.info(goal_text)
             logger_main.info(separator)
-            logger_main.info(instruction)
+            logger_main.info(goal_text)
 
             try:
-                final_response, generated_plan = await robot_planner.invoke_planner(instruction)
+                final_response, generated_plan = await robot_planner.invoke_planner(goal_text)
 
                 logger_main.info(final_response)
                 logger_plugins.info(final_response)
@@ -156,7 +168,7 @@ async def main():
                 logger_plugins.info(generated_plan)
 
                 responses[nr] = {
-                    "question": instruction,
+                    "goal": goal_text,
                     "response": final_response,
                     "plan": generated_plan
                 }
@@ -165,15 +177,12 @@ async def main():
                     json.dump(responses, file, indent=4)
 
             except Exception as e:
-                error_str = f"Error with instruction {instruction}: {e}"
+                error_str = f"Error processing goal {goal_text}: {e}"
                 logger_plugins.error(error_str)
                 logger_main.error(error_str)
 
-        logger_main.info("Finished processing Offline Predefined Instructions")
+        logger_main.info("Finished processing Offline Predefined Goals")
 
-    elif config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
-        # TODO: Implement Online Live Instructions
-        pass
     else:
         raise ValueError(f"Invalid task instruction mode: {config['robot_planner_settings']['task_instruction_mode']}")
     #endregion Robot Planner
@@ -193,6 +202,8 @@ async def main():
 
     # We have to add the relevant plugins to the kernel based on the configurations of the scene
 
+
+    # I have to create 3 agents: 1. that determines the next (sub)task to complete the goal, 2. One that selects actions to complete this task and 3. An agent that determines if the overall goal is completed yet or not
 
 if __name__ == "__main__":
     asyncio.run(main())

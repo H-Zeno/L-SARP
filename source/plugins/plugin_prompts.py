@@ -34,7 +34,7 @@ TEXT_OUT_PROMPT = "A string output containing the data from the text query  of t
 TEXT_METADATA_ROOM_PROMPT = "If this query concerns a specific room, return ONLY the name of this room from the list '{}'. If not, or if the room name is not close to any of the available ones, return 'None'."
 
 # Image document module
-IMAGE_FUN_PROMPT = "If the query concerns exactly one room, it can answer questions regarding the spatial relationships between objects within this room (such as A is on B, A is under B), count the number of visible objects or describe the surroundings in terms of visual appearance. It does not provide any 3D positions of objects nor the cumulative data about more than one room."
+IMAGE_FUN_PROMPT = "This function can be used to process real-time images recorded by a robot in the scene. The image could be used to answer questions regarding the spatial relationships between objects (such as A is on B, A is under B), count the number of visible objects or describe the surroundings in terms of visual appearance. It does not provide any 3D positions of objects nor the cumulative data about more than one room."
 IMAGE_IN_PROMPT = "Query asking for a visual data of an object, room or scene."
 IMAGE_OUT_PROMPT = "String being the visual data of the object, room or scene."
 IMAGE_METADATA_PROMPT = "Your job is to decide whether the given query concerns a specific room. If yes, return ONLY the name of the room from the pool {}. If not, or if the room name is not close to any of the available ones, return 'None'."
