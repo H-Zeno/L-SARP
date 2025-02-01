@@ -14,7 +14,7 @@ from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
 from planner_core.rag_document_loaders import load_image_documents, local_image_to_document
 from planner_core.interfaces import AbstractLlmChat
-from plugins.plugin_prompts import (
+from configs.plugin_prompts import (
     IMAGE_FUN_PROMPT,
     IMAGE_IN_PROMPT,
     IMAGE_OUT_PROMPT,

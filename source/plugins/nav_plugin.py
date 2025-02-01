@@ -10,7 +10,7 @@ from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
 from planner_core.interfaces import AbstractLlmChat
 from utils.navmesh_vis import visualize_navmesh_3d
-from plugins.plugin_prompts import (
+from configs.plugin_prompts import (
     NAV_FUN_ACTUAL_PROMPT,
     NAV_IN_PROMPT,
     NAV_OUT_ACTUAL_PROMPT,

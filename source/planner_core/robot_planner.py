@@ -3,10 +3,10 @@ from typing import Optional, Tuple, List
 
 from semantic_kernel import Kernel
 from semantic_kernel.services.ai_service_client_base import AIServiceClientBase
-from semantic_kernel.planners import (
-    FunctionCallingStepwisePlanner,
-    FunctionCallingStepwisePlannerOptions,
-)
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
+
+from semantic_kernel.contents import ChatHistory
+from semantic_kernel.functions import KernelArguments
 
 import logging
 
@@ -16,6 +16,7 @@ class RobotPlanner:
     def __init__(
         self, 
         kernel_service: AIServiceClientBase,
+        request_settings: OpenAIChatPromptExecutionSettings,
         enabled_plugins: List[str],
         plugin_configs: dict
     ) -> None:
@@ -25,20 +26,24 @@ class RobotPlanner:
         Args:
             kernel_service (AIServiceClientBase): The AI service client (e.g. OpenAI) that will
                 be used by the semantic kernel for planning and execution.
+            request_settings (OpenAIChatPromptExecutionSettings): The settings for the request to the AI service.
             enabled_plugins (List[str]): List of plugin names that should be enabled for the
                 current scene, e.g. ["nav", "text", "sql", "image"].
             plugin_configs (dict): Configuration dictionary for plugins containing tuples of
                 (factory_function, arguments, kernel_name) for each plugin.
         """
         self._kernel_service = kernel_service
+        self._request_settings = request_settings
         self._enabled_plugins = enabled_plugins
         self._plugin_configs = plugin_configs
+        self._system_prompt = Path("configs/system_prompt.txt").read_text()
 
     def set_kernel(self) -> None:
         """
         Sets up the kernel: adds the kernel services, the enabled plugins and the planner.
 
         """
+        # Addd our kernel Service
         self._kernel = Kernel()
         self._kernel.add_service(self._kernel_service)
         
@@ -48,35 +53,40 @@ class RobotPlanner:
                 factory_func, args, kernel_name = self._plugin_configs[plugin_name]
                 plugin = factory_func(*args)
                 self._kernel.add_plugin(plugin, plugin_name=kernel_name)
+        
+        # Pass the request settings to the kernel arguments
+        self._arguments = KernelArguments(settings=self._request_settings)
+        
+        # Create a chat history to store the system message, initial messages, and the conversation
+        history = ChatHistory()
+        history.add_system_message(self._system_prompt)
 
-        # Set up planner
-        options = FunctionCallingStepwisePlannerOptions(
-            max_iterations=5,
-            min_iteration_time_ms=2000,
-            max_tokens=5000,
-        )
-        self._planner = FunctionCallingStepwisePlanner(
-            service_id=self._kernel_service.service_id,
-            options=options,
-        )
 
-    async def invoke_planner(self, question: str) -> Tuple[str, str]:
+    async def invoke_robot_on_task(self, task: str) -> Tuple[str, str]:
         """
-        Gets the answer for the given question using automatic tool calling.
+        The robot achieves the given task using automatic tool calling.
 
         Args:
-            question (str): question to be answered
+            task (str): task to be answered
 
         Returns:
-            Tuple[str, str]: final answer to the question and the function calls made
+            Tuple[str, str]: final response (called final_answer) to the task and the function calls made,
+            a question will be asked to the user if the task is not yet completed
         """
+
         if self._kernel is None:
             raise ValueError("You need to set the Semantic Kernel first")
+        
+        # Add the chat history to the arguments
+        self._arguments["chat_history"] = self._history
+        self._arguments["task"] = task
 
         try:
-            # Get the response from the AI
-            response = await self._planner.invoke(self._kernel, question)
-            
+            # Get the response from the robot
+            # The response is either a confirmation or a question to the user
+            # The question to the user still has to be implemented
+            response = await self._kernel.invoke(arguments=self._arguments)
+
             # Make sure we have a valid response
             if response and hasattr(response, 'final_answer'):
                 return response.final_answer, response.chat_history[0].content if response.chat_history else ""

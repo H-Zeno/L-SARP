@@ -16,7 +16,7 @@ from llama_index.core import (
 
 from planner_core.interfaces import AbstractLlmChat
 from planner_core.rag_document_loaders import load_text_documents
-from plugins.plugin_prompts import (
+from configs.plugin_prompts import (
     TEXT_FUN_PROMPT,
     TEXT_IN_PROMPT,
     TEXT_OUT_PROMPT,

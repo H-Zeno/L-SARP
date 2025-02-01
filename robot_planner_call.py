@@ -8,7 +8,10 @@ from pathlib import Path
 from dotenv import dotenv_values
 from datetime import datetime
 
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion, OpenAIChatPromptExecutionSettings
+from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
+from semantic_kernel.contents import ChatHistory
+from semantic_kernel.functions import KernelArguments
 
 from planner_core.robot_planner import RobotPlanner
 from planner_core.config_handler import ConfigHandler
@@ -39,11 +42,18 @@ async def main():
     #region Kernel Services Setup (AI Model)
     settings = dotenv_values(".env_core_planner")
 
-    kernel_service = OpenAIChatCompletion(
+    kernel_chat_completion_service = OpenAIChatCompletion(
         ai_model_id=settings.get("AI_MODEL_ID"),
         api_key=settings.get("API_KEY"),
         org_id=settings.get("ORG_ID"),
-        service_id="planner_core"
+    )
+    
+    request_settings = OpenAIChatPromptExecutionSettings(
+        service_id="planner_core",
+        max_tokens=int(settings.get("MAX_TOKENS")),
+        temperature=float(settings.get("TEMPERATURE")),
+        top_p=float(settings.get("TOP_P")),
+        function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
     )
     #endregion Kernel Services Setup (AI Model)
 
@@ -98,7 +108,8 @@ async def main():
     #region Robot Planner
     try:
         robot_planner = RobotPlanner(
-            kernel_service=kernel_service,
+            kernel_service=kernel_chat_completion_service,
+            request_settings=request_settings,
             enabled_plugins=active_scene.plugins,
             plugin_configs=plugin_configs
         )
@@ -109,13 +120,12 @@ async def main():
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
         initial_prompt = f"""
-        I'm your AI assistant for the {active_scene.value} scene. I can help you:
-        - Navigate the environment
+        Hey, I'm Spot, your intelligent robot assistant. Currently I am located in the {active_scene.value} scene. I am happy to help you with:
+        - Navigating throught the environment
         - Understand the scene
         - Execute tasks and actions
-        - Process multimodal inputs
         
-        What goal would you like me to help you achieve?
+        What goal would you like me to achieve?
         """
         pass
     
