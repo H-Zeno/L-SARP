@@ -46,6 +46,13 @@ class RobotPlanner:
         # Addd our kernel Service
         self._kernel = Kernel()
         self._kernel.add_service(self._kernel_service)
+
+        # Define a chat function (a template for how to handle user input).
+        self._chat_function = self._kernel.add_function(
+            prompt="{{$chat_history}}{{$task}}",
+            plugin_name="RobotPlanner",
+            function_name="RobotPlanner",
+        )
         
         # Add Enabled Plugins to the kernel
         for plugin_name in self._enabled_plugins:
@@ -58,8 +65,8 @@ class RobotPlanner:
         self._arguments = KernelArguments(settings=self._request_settings)
         
         # Create a chat history to store the system message, initial messages, and the conversation
-        history = ChatHistory()
-        history.add_system_message(self._system_prompt)
+        self._history = ChatHistory()
+        self._history.add_system_message(self._system_prompt)
 
 
     async def invoke_robot_on_task(self, task: str) -> Tuple[str, str]:
@@ -85,8 +92,9 @@ class RobotPlanner:
             # Get the response from the robot
             # The response is either a confirmation or a question to the user
             # The question to the user still has to be implemented
-            response = await self._kernel.invoke(arguments=self._arguments)
+            response = await self._kernel.invoke(self._chat_function, arguments=self._arguments)
 
+            print(response)
             # Make sure we have a valid response
             if response and hasattr(response, 'final_answer'):
                 return response.final_answer, response.chat_history[0].content if response.chat_history else ""

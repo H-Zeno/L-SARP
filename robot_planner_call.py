@@ -170,7 +170,7 @@ async def main():
             logger_main.info(goal_text)
 
             try:
-                final_response, generated_plan = await robot_planner.invoke_planner(goal_text)
+                final_response, generated_plan = await robot_planner.invoke_robot_on_task(goal_text)
 
                 logger_main.info(final_response)
                 logger_plugins.info(final_response)
