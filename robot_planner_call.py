@@ -38,24 +38,6 @@ async def main():
     chat_model_factory = OpenAiChatModelFactory(config_handler)
     model_factory = OpenAiModelFactory(config_handler) # These model factories are used for the plugins (capabilities) of our robot
     #endregion Initializing Plugins
-    
-    #region Kernel Services Setup (AI Model)
-    settings = dotenv_values(".env_core_planner")
-
-    kernel_chat_completion_service = OpenAIChatCompletion(
-        ai_model_id=settings.get("AI_MODEL_ID"),
-        api_key=settings.get("API_KEY"),
-        org_id=settings.get("ORG_ID"),
-    )
-    
-    request_settings = OpenAIChatPromptExecutionSettings(
-        service_id="planner_core",
-        max_tokens=int(settings.get("MAX_TOKENS")),
-        temperature=float(settings.get("TEMPERATURE")),
-        top_p=float(settings.get("TOP_P")),
-        function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
-    )
-    #endregion Kernel Services Setup (AI Model)
 
     #region Scene and Plugin Setup
     active_scene_name = config["robot_planner_settings"]["active_scene"]
@@ -106,10 +88,40 @@ async def main():
     #endregion Scene and Plugin Setup
 
     #region Robot Planner
+    settings = dotenv_values(".env_core_planner")
+
+    task_execution_endpoint_settings = OpenAIChatPromptExecutionSettings(
+        service_id="task_executer",
+        max_tokens=int(settings.get("MAX_TOKENS")),
+        temperature=float(settings.get("TEMPERATURE")),
+        top_p=float(settings.get("TOP_P")),
+        function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
+    )
+
+    task_generation_endpoint_settings = OpenAIChatPromptExecutionSettings(
+        service_id="task_generator",
+        max_tokens=int(settings.get("MAX_TOKENS")),
+        temperature=float(settings.get("TEMPERATURE")),
+        top_p=float(settings.get("TOP_P")),
+        function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
+    )
+    
     try:
         robot_planner = RobotPlanner(
-            kernel_service=kernel_chat_completion_service,
-            request_settings=request_settings,
+            task_execution_service=OpenAIChatCompletion(
+                service_id="task_executer",
+                api_key=settings.get("API_KEY"),
+                org_id=settings.get("ORG_ID"),
+                ai_model_id=settings.get("AI_MODEL_ID")
+            ),
+            task_generation_service=OpenAIChatCompletion(
+                service_id="task_generator",
+                api_key=settings.get("API_KEY"),
+                org_id=settings.get("ORG_ID"),
+                ai_model_id=settings.get("AI_MODEL_ID")
+            ),
+            task_execution_endpoint_settings=task_execution_endpoint_settings,
+            task_generation_endpoint_settings=task_generation_endpoint_settings,
             enabled_plugins=active_scene.plugins,
             plugin_configs=plugin_configs
         )
@@ -169,18 +181,19 @@ async def main():
             logger_main.info(separator)
             logger_main.info(goal_text)
 
-            try:
-                final_response, generated_plan = await robot_planner.invoke_robot_on_task(goal_text)
 
-                logger_main.info(final_response)
-                logger_plugins.info(final_response)
+            try:
+                response, history = await robot_planner.invoke_robot_on_task(goal_text)
+
+                logger_main.info(response)
+                logger_plugins.info(response)
                 logger_plugins.info("---")
-                logger_plugins.info(generated_plan)
+                logger_plugins.info(history)
 
                 responses[nr] = {
                     "goal": goal_text,
-                    "response": final_response,
-                    "plan": generated_plan
+                    "response": response,
+                    "plan": history
                 }
 
                 with responses_path.open("w") as file:
