@@ -10,6 +10,8 @@ from datetime import datetime
 
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion, OpenAIChatPromptExecutionSettings
 from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
+from semantic_kernel.contents.function_result_content import FunctionResultContent
+from semantic_kernel.contents.function_call_content import FunctionCallContent
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.functions import KernelArguments
 
@@ -144,7 +146,7 @@ async def main():
     ### Offline Predefined Goals ###
     elif config["robot_planner_settings"]["task_instruction_mode"] == "offline_predefined_instruction":
         # Process existing predefined goals
-        goals_path = path_to_scene_data / "goals.json"
+        goals_path = Path("configs/goals.json")  # Convert string to Path object
         # Create timestamp for the responses file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         responses_path = path_to_scene_data / f"responses_{timestamp}.json"
@@ -189,11 +191,15 @@ async def main():
                 logger_plugins.info(response)
                 logger_plugins.info("---")
                 logger_plugins.info(history)
+                
+                # function_calls = [item for item in response.items if isinstance(item, FunctionCallContent)]
 
+                # print("---")
+                # print(f"Function Calls: {function_calls}")
+                # print("---")
                 responses[nr] = {
                     "goal": goal_text,
                     "response": response,
-                    "plan": history
                 }
 
                 with responses_path.open("w") as file:
@@ -228,5 +234,11 @@ async def main():
 
     # I have to create 3 agents: 1. that determines the next (sub)task to complete the goal, 2. One that selects actions to complete this task and 3. An agent that determines if the overall goal is completed yet or not
 
+    # The game state/environment state (in text form) that is given to the task generation agent always needs to be up-to-date with our scene graph representation
+    # There are several ways to highlight the most relevant parts of the scene graph: 
+    # 1. CLIP embedding similarity
+    # 2. RAG on descriptions of nodes in the scene graph
+    # 3. The nodes of the scene graph that are in the field of view should be highlighted/get more attention
+    # The nodes in the field of view should be automatically enterred in a text description that makes up the robot state
 if __name__ == "__main__":
     asyncio.run(main())
