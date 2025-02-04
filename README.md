@@ -31,9 +31,9 @@ The dataset used in the paper is available at [Roboflow](https://universe.robofl
 Heads up: this setup is a bit involved, since we will explain not only some example code, but also the enttire setup, including acquiring the point clouds, aligning them, setting up the docker tools and scene graphs and so on and so forth. So bear with me here. In case u run into issues, don't hesitate to leave an issue or just send me an email :)
 
 ### Define SpotLight Path
-Set the environment variable `SPOTLIGHT` to the path of the Spot-Light folder. Just to make sure we're all on the same page ... I mean path ;) Example:
+Set the environment variable `LSARP` to the path of the L-SARP folder. Just to make sure we're all on the same page ... I mean path ;) Example:
 ```bash
-export SPOTLIGHT=/home/cvg-robotics/tim_ws/Spot-Light/
+export LSARP=/home/cvg-robotics/zeno_ws/L-SARP/
 ```
 
 ### Virtual Environment
@@ -49,45 +49,56 @@ export SPOTLIGHT=/home/cvg-robotics/tim_ws/Spot-Light/
 
 ---
 
-## Point Cloud Capturing
-We will need two pint clouds here.
+## Point Cloud Capturing and Alignment
+We need two point clouds for the scene understanding:
 
-### Low-Resolution Point Cloud
-1. Position Spot in front of the AprilTag and start the autowalk.
-2. Zip the resulting data and unzip it into $SPOTLIGHT/data/autowalk/.
-3. Update the configuration file:
-   - Fill in the name of the unzipped folder `<low_res_name>` under $SPOTLIGHT/pre_scanned_graphs/low_res.
-4. Copy the low-resolution point cloud:
-   ```bash
-   cp $SPOTLIGHT/data/autowalk/<low_res_name>.walk/point_cloud.ply $SPOTLIGHT/data/point_clouds/<low_res_name>.ply
+### Prerequisites
+1. Update the configuration file (`configs/config.yaml`):
+   ```yaml
+   pre_scanned_graphs:
+     low_res: "<low_res_name>"    # Name for the low-resolution scan (acquired during autowalk with spot)
+     high_res: "<high_res_name>"  # Name for the high-resolution scan (acquired through 3D lidar scan with e.g. Ipad)
    ```
 
+### Low-Resolution Point Cloud
+1. Position Spot in front of the AprilTag and start the autowalk
+2. Zip the resulting data and unzip it into `$LSARP/data/autowalk/`
+   - The point cloud should be at: `$LSARP/data/autowalk/<low_res_name>.walk/point_cloud.ply`
+
 ### High-Resolution Point Cloud
-1. Use the 3D Scanner App (iOS) to capture the point cloud. Ensure the fiducial is visible during the scan.
+1. Use the 3D Scanner App (iOS) to capture the point cloud
+   - Ensure the fiducial is visible during the scan
 2. Export:
    - **All Data** as a zip file.
    - **Point Cloud/PLY** with "High Density" enabled and "Z axis up" disabled.
-3. Unzip the "All Data" into $SPOTLIGHT/data/prescans/ and rename the folder `<high_res_name>`.
-4. Rename and copy the point cloud:
-   ```bash
-   cp <exported_point_cloud>.ply $SPOTLIGHT/data/prescans/<high_res_name>/pcd.ply
+3. Unzip the "All Data" into $LSARP/data/prescans/
+
    ```
 
-5. Update the configuration file:
-   - Fill in `<high_res_name>` under `pre_scanned_graphs/high_res`.
-   - Fill in `<low_res_name>` under `pre_scanned_graphs/low_res`.
+The script will:
+1. Read scan names from config.yaml
+2. Create required directories if needed
+3. Copies the low resolution point cloud data to $LSARP/data/point_clouds/<low_res_name>.ply
+4. Copies the high resolution point cloud data to $LSARP/data/prescans/<high_res_name>/pcd.ply
+5. Run point cloud alignment
+6. Save aligned results to `$LSARP/data/aligned_point_clouds/`
 
----
-
-## Aligning Point Clouds
-Run the alignment script (ensure names in the config are updated beforehand):
+### Running the Alignment Script
 ```bash
-python3 $SPOTLIGHT/source/scripts/point_cloud_scripts/full_align.py
+# Make it executable (only need to do this once)
+chmod +x scripts/allign_pointclouds.sh
+
+# Run the script
+./scripts/allign_pointclouds.sh
 ```
-The aligned point clouds will be written to:
-```
-$SPOTLIGHT/data/aligned_point_clouds
-```
+
+The script will:
+1. Read scan names from config.yaml
+2. Create required directories if needed
+3. Copies the low resolution point cloud data to $LSARP/data/point_clouds/<low_res_name>.ply
+4. Copies the high resolution point cloud data to $LSARP/data/prescans/<high_res_name>/pcd.ply
+5. Run point cloud alignment
+6. Save aligned results to `$LSARP/data/aligned_point_clouds/`
 
 ---
 

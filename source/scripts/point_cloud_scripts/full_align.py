@@ -17,7 +17,7 @@ from utils import recursive_config
 from utils.importer import PointCloud
 from utils.point_clouds import icp
 
-SAVE_OPENMASK3D = True
+SAVE_OPENMASK3D = False
 
 
 def fetch_paths(
@@ -194,7 +194,10 @@ def correct_to_upright(ground_tform_fiducial: np.ndarray) -> np.ndarray:
     return corr_ground_tform_fiducial
 
 
-def draw_point_clouds(scan: PointCloud, autowalk: PointCloud) -> None:
+def draw_point_clouds(scan: PointCloud, autowalk: PointCloud, enable_draw: bool = False) -> None:
+    if not enable_draw:
+        return
+        
     scan_temp = copy.deepcopy(scan)
     autowalk_temp = copy.deepcopy(autowalk)
     scan_temp.paint_uniform_color([1, 0.706, 0])
@@ -241,6 +244,10 @@ def main() -> None:
     directory_path = os.path.join(
         str(directory_path), config["pre_scanned_graphs"]["high_res"]
     )
+    
+    # Get visualization setting
+    enable_visualization = config["pre_scanned_graphs"].get("draw_point_clouds", False)
+    
     jpg_json_paths, mesh_path, pcd_path = fetch_paths(directory_path)
 
     # take first image of scan_ground
@@ -275,7 +282,7 @@ def main() -> None:
         str(autowalk_ply_path), f'{config["pre_scanned_graphs"]["low_res"]}.ply'
     )
     autowalk_cloud = o3d.io.read_point_cloud(str(autowalk_ply_path))
-    draw_point_clouds(scan_ground, autowalk_cloud)
+    draw_point_clouds(scan_ground, autowalk_cloud, enable_visualization)
 
     scan_fiducial = copy.deepcopy(scan_ground).transform(fiducial_tform_ground)
     # scan_vis = add_coordinate_system(
@@ -283,11 +290,11 @@ def main() -> None:
     # )
     # o3d.visualization.draw_geometries([scan_vis])
 
-    draw_point_clouds(scan_fiducial, autowalk_cloud)
+    draw_point_clouds(scan_fiducial, autowalk_cloud, enable_visualization)
     fiducial_tform_icp = icp(scan_fiducial, autowalk_cloud, threshold=0.15)#15
     icp_tform_fiducial = np.linalg.inv(fiducial_tform_icp)
     scan_icp = copy.deepcopy(scan_fiducial).transform(icp_tform_fiducial)
-    draw_point_clouds(scan_icp, autowalk_cloud)
+    draw_point_clouds(scan_icp, autowalk_cloud, enable_visualization)
 
     # get full transformation_matrix
     icp_tform_ground = icp_tform_fiducial @ fiducial_tform_ground
