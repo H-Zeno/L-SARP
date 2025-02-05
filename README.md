@@ -98,8 +98,6 @@ The script will:
 
 ## Scene Graph Setup
 
-1. Clone and set up Mask3D:
-
 ```bash
 # Make the script executable
 chmod +x setup_scripts/setup_mask3d.sh
