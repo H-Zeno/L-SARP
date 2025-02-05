@@ -67,9 +67,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Update permissions and move files
-echo "Updating files..."
-cp "${LSARP_DIR}/mask3d_label_mapping.csv" "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/mask3d_label_mapping.csv"
+# Copying files (these file locations are expected by the SpotLight repo)
+echo "Copying files..."
 cp "${LSARP_DIR}/data/aligned_point_clouds/${HIGH_RES_NAME}/pose/icp_tform_ground.txt" "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/icp_tform_ground.txt"
+cp "${LSARP_DIR}/mask3d_label_mapping.csv" "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/mask3d_label_mapping.csv"
 
 echo "Mask3D setup and processing complete!" 
