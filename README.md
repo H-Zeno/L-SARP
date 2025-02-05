@@ -44,7 +44,7 @@ export LSARP=/home/cvg-robotics/zeno_ws/L-SARP/
    ```
 2. Install required packages:
    ```bash
-   pip install -r requirements.txt
+   pip install -e .
    ```
 
 ---
