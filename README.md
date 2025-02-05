@@ -49,11 +49,10 @@ export LSARP=/home/cvg-robotics/zeno_ws/L-SARP/
 
 ## Point Cloud Capturing and Alignment
 
-We need two point clouds for the scene understanding:
+We need two point clouds for the scene understanding: a low resolution point cloud captured by Spot (autowalk) and a high resolution one captured through a 3D lidar scan with e.g. the 3D Scanner App (iOS)
 
-### Prerequisites
-
-1. Update the configuration file (`configs/config.yaml`):
+Update the configuration file (`configs/config.yaml`):
+   
    ```yaml
    pre_scanned_graphs:
      low_res: '<low_res_name>' # Name for the low-resolution scan (acquired during autowalk with spot)
