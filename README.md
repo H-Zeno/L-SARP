@@ -61,27 +61,17 @@ We need two point clouds for the scene understanding:
    ```
 
 ### Low-Resolution Point Cloud
-1. Position Spot in front of the AprilTag and start the autowalk
+1. Position Spot in front of the AprilTag and start the autowalk (control spot to walk around the office, point cloud gets captured in the meantime)
 2. Zip the resulting data and unzip it into `$LSARP/data/autowalk/`
    - The point cloud should be at: `$LSARP/data/autowalk/<low_res_name>.walk/point_cloud.ply`
 
 ### High-Resolution Point Cloud
 1. Use the 3D Scanner App (iOS) to capture the point cloud
    - Ensure the fiducial is visible during the scan
-2. Export:
+2. Export (with the 3D Scanner APP):
    - **All Data** as a zip file.
-   - **Point Cloud/PLY** with "High Density" enabled and "Z axis up" disabled.
-3. Unzip the "All Data" into $LSARP/data/prescans/
-
-   ```
-
-The script will:
-1. Read scan names from config.yaml
-2. Create required directories if needed
-3. Copies the low resolution point cloud data to $LSARP/data/point_clouds/<low_res_name>.ply
-4. Copies the high resolution point cloud data to $LSARP/data/prescans/<high_res_name>/pcd.ply
-5. Run point cloud alignment
-6. Save aligned results to `$LSARP/data/aligned_point_clouds/`
+   - **Point Cloud/PLY** file with "High Density" enabled and "Z axis up" disabled.
+3. Unzip the "All Data" into $LSARP/data/prescans/ and copy the PLY file into this folder as well.
 
 ### Running the Alignment Script
 ```bash
