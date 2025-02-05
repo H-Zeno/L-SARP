@@ -44,9 +44,13 @@ docker pull rupalsaxena/mask3d_docker:latest
 
 echo "Running Mask3D processing..."
 
+# Rename the point cloud PLY file from pcd to mesh, since mesh is required for 3D Mask 
+mv "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/pcd.ply" "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/mesh.ply"
+
 # First remove any existing container with the same name
 docker rm -f mask3d_docker 2>/dev/null || true
 
+# Run Mask3D in it's docker environment
 docker run --gpus all -it \
     --name mask3d_docker \
     -v "${LSARP_DIR}:${LSARP_DIR}" \
@@ -67,6 +71,5 @@ fi
 echo "Updating files..."
 cp "${LSARP_DIR}/mask3d_label_mapping.csv" "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/mask3d_label_mapping.csv"
 cp "${LSARP_DIR}/data/aligned_point_clouds/${HIGH_RES_NAME}/pose/icp_tform_ground.txt" "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/icp_tform_ground.txt"
-cp "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/pcd.ply" "${LSARP_DIR}/data/prescans/${HIGH_RES_NAME}/mesh.ply"
 
 echo "Mask3D setup and processing complete!" 
