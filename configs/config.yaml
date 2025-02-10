@@ -26,7 +26,7 @@ pre_scanned_graphs:
   graph_frame_name_prefix: "filtered_fiducial_"
   floor: -0.1
   low_res: "02-02-25-semantic-corner"
-  high_res: "2025_02_02a"
+  high_res: "020225-semantic-corner"
   masked: ""
   draw_point_clouds: false  # Set to true to enable point cloud visualization in the alignment script
 
