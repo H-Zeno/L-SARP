@@ -45,3 +45,4 @@ azure-core==1.31.0
 azure-identity==1.17.1
 pygeodesic==0.1.9
 libigl==2.5.1
+python-yq>=3.0.0

@@ -14,7 +14,15 @@ check_dir() {
 
 # Function to read high_res name from config
 get_high_res_name() {
-    grep "high_res:" "$CONFIG_FILE" | cut -d'"' -f2
+    # Use yq or python to properly parse YAML
+    if command -v yq >/dev/null 2>&1; then
+        # If yq is available
+        HIGH_RES_NAME=$(yq eval '.pre_scanned_graphs.high_res' "$CONFIG_FILE")
+    else
+        # Fallback to Python if yq is not available
+        HIGH_RES_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('$CONFIG_FILE'))['pre_scanned_graphs']['high_res'])")
+    fi
+    echo "Using high resolution scan: ${HIGH_RES_NAME}"
 }
 
 # Setup Mask3D repository and checkpoints
@@ -35,7 +43,7 @@ fi
 cd "${LSARP_DIR}" || exit 1
 
 # Get high-res name from config
-HIGH_RES_NAME=$(get_high_res_name)
+get_high_res_name
 echo "Using high resolution scan: ${HIGH_RES_NAME}"
 
 # Pull and run Mask3D Docker container

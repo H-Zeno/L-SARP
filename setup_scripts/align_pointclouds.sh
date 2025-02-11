@@ -14,9 +14,16 @@ check_dir() {
 
 # Function to read from config.yaml
 read_config() {
-    # Read values from config using grep and cut
-    LOW_RES_NAME=$(grep "low_res:" "$CONFIG_FILE" | cut -d'"' -f2)
-    HIGH_RES_NAME=$(grep "high_res:" "$CONFIG_FILE" | cut -d'"' -f2)
+    # Use yq or python to properly parse YAML
+    if command -v yq >/dev/null 2>&1; then
+        # If yq is available
+        LOW_RES_NAME=$(yq eval '.pre_scanned_graphs.low_res' "$CONFIG_FILE")
+        HIGH_RES_NAME=$(yq eval '.pre_scanned_graphs.high_res' "$CONFIG_FILE")
+    else
+        # Fallback to Python if yq is not available
+        LOW_RES_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('$CONFIG_FILE'))['pre_scanned_graphs']['low_res'])")
+        HIGH_RES_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('$CONFIG_FILE'))['pre_scanned_graphs']['high_res'])")
+    fi
     
     echo "Using configuration:"
     echo "Low resolution scan: $LOW_RES_NAME"
