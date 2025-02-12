@@ -324,7 +324,7 @@ def main() -> None:
         depth_save_path,
         intrinsic_save_path,
     ):
-        os.makedirs(current_path, exist_ok=False)
+        os.makedirs(current_path, exist_ok=True)
 
     intrinsic = None
     for frame_nr, jpg_json_dict in jpg_json_paths.items():

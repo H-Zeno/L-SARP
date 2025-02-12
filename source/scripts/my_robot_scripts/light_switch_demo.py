@@ -29,7 +29,7 @@ from utils.singletons import (
     RobotStateClientSingleton,
     WorldObjectClientSingleton,
 )
-from utils.light_switch_detection import predict_light_switches
+from utils.light_switch_interaction import LightSwitchDetection
 from utils.affordance_detection_light_switch import compute_affordance_VLM_GPT4, compute_advanced_affordance_VLM_GPT4
 from bosdyn.api.image_pb2 import ImageResponse
 from utils.object_detetion import BBox, Detection, Match
@@ -183,16 +183,18 @@ logging.info(f"SHUFFLE: {SHUFFLE}")
 logging.info(f"NUM_REFINEMENT_POSES: {NUM_REFINEMENT_POSES}")
 logging.info(f"NUM_REFINEMENTS_MAX_TRIES: {NUM_REFINEMENTS_MAX_TRIES}")
 
+light_switch_detection = LightSwitchDetection()
+
 def refinement(pose: Pose3D, frame_name: str, bb_optimization: bool = True):
 
     depth_image_response, color_response = get_camera_rgbd(
         in_frame="image", vis_block=False, cut_to_size=False
     )
 
-    ref_boxes = predict_light_switches(color_response[0], vis_block=True)
+    ref_boxes = light_switch_detection.predict_light_switches(color_response[0], vis_block=True)
 
     #################################
-    # efined boxes
+    # refined boxes
     #################################
     if bb_optimization:
         boxes = []
@@ -203,7 +205,7 @@ def refinement(pose: Pose3D, frame_name: str, bb_optimization: bool = True):
             boxes.append(bb_refined)
         ref_boxes = boxes
     ###############################
-    # efined boxes
+    # refined boxes
     ###############################
 
     refined_posess = calculate_light_switch_poses(ref_boxes, depth_image_response, frame_name, frame_transformer)

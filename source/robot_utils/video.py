@@ -531,9 +531,9 @@ def localize_from_images(config: Config, vis_block: bool = True) -> str:
     The idea is based on localization with fiducials and fine-tuning. Namely, we
     (1) first get an initial localization via the fiducials in the environment
     (2) then scan a point cloud of the surrounding environment
-    (2) transform it to the fiducial frame based on its localization ("prediction")
-    (3) load the pre-scanned point cloud as the "ground truth"
-    (4) compare prediction and ground truth via ICP and save the adjusted localization
+    (3) transform it to the fiducial frame based on its localization ("prediction")
+    (4) load the pre-scanned point cloud as the "ground truth"
+    (5) compare prediction and ground truth via ICP and save the adjusted localization
     """
     # get images from all robot cameras
     global image_client

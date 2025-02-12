@@ -4,13 +4,19 @@ import numpy as np
 import cv2, os, glob, pickle, sys
 from sklearn.cluster import MeanShift, KMeans, DBSCAN
 from math import ceil
-from scenegraph.projecting import detections_to_bboxes
-from scenegraph.drawer_detection import predict_yolodrawer
-from scenegraph.light_switch_detection import predict_light_switches
 import scipy.cluster.hierarchy as hcluster
 import json
-from scenegraph.projecting import project_points_bbox
 from collections import namedtuple
+
+# from scenegraph.projecting import detections_to_bboxes
+# from scenegraph.drawer_detection import predict_yolodrawer
+# from scenegraph.light_switch_detection import predict_light_switches
+# from scenegraph.projecting import project_points_bbox
+
+from LostFound.src.data_processing.projecting import detections_to_bboxes, project_points_bbox
+from LostFound.src.data_processing.drawer_detection import predict_yolodrawer
+from LostFound.src.data_processing.light_switch_detection import predict_light_switches
+
 
 BBox = namedtuple("BBox", ["xmin", "ymin", "xmax", "ymax"])
 Detection = namedtuple("Detection", ["file", "name", "conf", "bbox"])
