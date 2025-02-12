@@ -160,15 +160,21 @@ def light_switch_refinement(pose: Pose3D, frame_name: str, frame_transformer: Fr
 
         return refined_pose, refined_box, color_response[0]
 
-def determine_switch_offsets(affordance_dict: dict) -> List[List[float]]:
+def determine_switch_offsets_and_type(affordance_dict: dict) -> Union[Tuple[List[List[float]], str], None]:
     """
-    Determines the offsets for the light switch interaction based on 
+    Determines the offsets and switch type based on the affordance dictionary (output of light_switch_affordance_detection)
+
+    Args:
+        affordance_dict (dict): Affordance dictionary containing the information about the detected light switch
+    
+    Returns:
+        Tuple[List[List[float]], str]: The offsets and switch type
     """
 
     offsets = []
     if affordance_dict["button type"] == "rotating switch":
         offsets.append([0.0, 0.0, 0.0])
-        return offsets
+        return offsets, affordance_dict["button type"]
 
     elif affordance_dict["button type"] == "push button switch":
         if affordance_dict["button count"] == "single":
@@ -215,7 +221,7 @@ def determine_switch_offsets(affordance_dict: dict) -> List[List[float]]:
             else:
                 logging.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
                 return None
-        return offsets
+        return offsets, affordance_dict["button type"]
     else:
         print("THATS NOT A LIGHT SWITCH!")
         return None
@@ -249,6 +255,7 @@ def light_switch_affordance_detection(refined_box: BBox, color_response: ImageRe
     
     return affordance_dict
 
+
 def get_refined_switch_pose(pose: Pose3D, frame_name: str, x_offset: float, NUM_REFINEMENT_POSES: int, BOUNDING_BOX_OPTIMIZATION: bool = True) -> Tuple[Pose3D, BBox, ImageResponse]:
     """
     Refines the pose of the light switch handle.
@@ -276,8 +283,7 @@ def get_refined_switch_pose(pose: Pose3D, frame_name: str, x_offset: float, NUM_
         ref_add_poses = [camera_add_pose_refinement_right]
 
     refined_poses = []
-    refined_boxes = []
-    color_responses = []
+
     count = 0
     while count < NUM_REFINEMENTS_MAX_TRIES:
         if len(refined_poses) == 0:
@@ -287,11 +293,10 @@ def get_refined_switch_pose(pose: Pose3D, frame_name: str, x_offset: float, NUM_
                 # The arm will move to each of the 4, 3, 2, or 1 positions close to the light switch that we have set before (increased robustness)
                 move_arm(p, frame_name, body_assist=True)
                 try:
-                    refined_pose, refined_box, color_response = light_switch_refinement(pose, frame_name, frame_transformer, BOUNDING_BOX_OPTIMIZATION)
+                    # for the refined)box and color_response, only the one from the last frame will be returned
+                    refined_pose, refined_box, color_response = light_switch_refinement(pose, frame_name, frame_transformer, BOUNDING_BOX_OPTIMIZATION) 
                     if refined_pose is not None:
                         refined_poses.append(refined_pose)
-                        refined_boxes.append(refined_box) # we add into a list (just for debugging), but only care about the first one
-                        color_responses.append(color_response) # we add into a list (just for debugging), but only care about the first one
                 except:
                     logging.warning(f"Refinement try {count+1} failed at refinement pose {idx_ref_pose+1} of {len(ref_add_poses)}")
                     continue
@@ -309,16 +314,25 @@ def get_refined_switch_pose(pose: Pose3D, frame_name: str, x_offset: float, NUM_
     end_time_refinement = time.time()
     logging.info(f"Refinement time for frame {frame_name}: {end_time_refinement - begin_time_refinement}")
 
-    return refined_pose, refined_boxes[0], color_responses[0]
+    return refined_pose, refined_box, color_response
 
 
-def switch_interaction(affordance_dict: dict, refined_pose: Pose3D, offsets: List[List], frame_name: str):
+def switch_interaction(switch_type: str, refined_pose: Pose3D, offsets: List[List], frame_name: str) -> None:
+    """
+    Interact with the light switch based on the type of light switch (saved in the affordance dictionary).
 
-    if affordance_dict["button type"] == "rotating switch":
+    Args:
+        switch_type (str): The type of the light switch (e.g. rotating or push switch)
+        refined_pose (Pose3D): The refined pose of the light switch handle
+        offsets (List[List]): The offsets for the light switch interaction
+        frame_name (str): The name of the frame
+    """
+
+    if switch_type == "rotating switch":
         turn_light_switch(refined_pose, frame_name)
         return None
 
-    if affordance_dict["button type"] == "push button switch":
+    if switch_type == "push button switch":
         for offset_coords in offsets:
             pose_offset = copy.deepcopy(refined_pose)
             pose_offset.coordinates += np.array(offset_coords)
@@ -401,6 +415,7 @@ class _Push_Light_Switch(ControlFunction):
         **kwargs,
     ) -> str:
 
+        self.vis_block = True
         #################################
         # get scene graph and visualize it
         #################################
@@ -426,26 +441,39 @@ class _Push_Light_Switch(ControlFunction):
         IDS_LAMPS = [node.object_id for node in lamp_nodes]
 
         #################################
-        # localization
+        # localization of spot based on camera images and depth scans
         #################################
         start_time = time.time()
         set_gripper_camera_params('640x480')
+
         frame_name = localize_from_images(config, vis_block=False)
+
+        set_gripper_camera_params('1280x720')
         end_time_localization = time.time()
         logging.info(f"Localization time: {end_time_localization - start_time}")
 
         #################################
-        # check lamp states pre interaction
+        # Move spot to the center of the scene
         #################################
-        set_gripper_camera_params('1280x720')
         move_body(POSE_CENTER, frame_name)
+    
+        #################################
+        # Check lamp states pre interaction
+        #################################
         lamp_images_pre = check_lamps(POSES_LAMPS, frame_name)
 
         # Reverse the order of the switch_nodes list -> why? 
         switch_nodes.reverse()
 
+        #################################
+        # Interact with each switch
+        #################################
         for idx, switch in enumerate(switch_nodes):
-            pose_start_time = time.time()
+
+            #################################
+            # Move body to switch
+            #################################
+            body_to_switch_start_time = time.time()
 
             pose = Pose3D(switch.centroid)
             pose.set_rot_from_direction(switch.normal)
@@ -453,25 +481,37 @@ class _Push_Light_Switch(ControlFunction):
             body_add_pose_refinement_right = Pose3D((-STAND_DISTANCE, -0.00, -0.00))
             body_add_pose_refinement_right.set_rot_from_rpy((0, 0, 0), degrees=True)
             p_body = pose.copy() @ body_add_pose_refinement_right.copy()
+
             move_body(p_body.to_dimension(2), frame_name)
             logging.info(f"Moved body to switch {idx+1} of {len(switch_nodes)}")
-            end_time_move_body = time.time()
-            logging.info(f"Time to move body to switch {idx+1}: {end_time_move_body - pose_start_time}")
+            
+            body_to_switch_end_time = time.time()
+            logging.info(f"Time to move body to switch {idx+1}: {body_to_switch_end_time - body_to_switch_start_time}")
 
-            carry_arm() # what exactly does carry arm do?
+            #################################
+            # Extend the arm to a neutral carrying position
+            #################################
+            carry_arm() 
 
+            #################################
+            # Push light switch
+            #################################
             push_light_switch(pose, frame_name, z_offset=True, forces=FORCES)
 
             #################################
             # refine handle position
             #################################
             x_offset = -0.2
-                
             refined_pose, refined_box, color_response = get_refined_switch_pose(pose, frame_name, x_offset, NUM_REFINEMENT_POSES, BOUNDING_BOX_OPTIMIZATION=True)
-            stow_arm()
-            push_light_switch(pose, frame_name, z_offset=True, forces=FORCES)
-
             
+            if refined_pose is not None:
+                push_light_switch(refined_pose, frame_name, z_offset=True, forces=FORCES)
+            else:
+                logging.warning(f"Refined pose is None for switch {idx+1} of {len(switch_nodes)}")
+                logging.warning(f"Pushing light switch without refinement")
+                push_light_switch(pose, frame_name, z_offset=True, forces=FORCES)
+
+            stow_arm()
             
             #################################
             # affordance detection
@@ -483,8 +523,10 @@ class _Push_Light_Switch(ControlFunction):
             #################################
             #  light switch interaction based on affordance
             #################################
-            offsets = determine_switch_offsets(affordance_dict)
-            switch_interaction(affordance_dict, refined_pose, offsets, frame_name)
+            switch_interaction_start_time = time.time()
+
+            offsets, switch_type = determine_switch_offsets_and_type(affordance_dict)
+            switch_interaction(switch_type, refined_pose, offsets, frame_name)
             stow_arm()
             logging.info(f"Tried interaction with switch {idx + 1} of {len(switch_nodes)}")
             
@@ -494,9 +536,11 @@ class _Push_Light_Switch(ControlFunction):
             move_body(POSE_CENTER, frame_name)
             lamp_images_post = check_lamps(POSES_LAMPS, frame_name)
 
-            lamp_state_changes = get_lamp_state_changes(lamp_images_pre, lamp_images_post)
+            lamp_state_changes = get_lamp_state_changes(lamp_images_pre, lamp_images_post, vis_block=self.vis_block)
 
+            #################################
             # add lamps to the scene graph
+            #################################
             for idx, state_change in enumerate(lamp_state_changes):
                 if state_change == 1 or state_change == -1:
                     # add lamp to switch, here the scene graph gets updated
@@ -504,16 +548,16 @@ class _Push_Light_Switch(ControlFunction):
                 elif state_change == 0:
                     pass
             
-            # visualize the new scene graph
-            scene_graph.visualize(labels=True, connections=True, centroids=True)
+            if self.vis_block:
+                scene_graph.visualize(labels=True, connections=True, centroids=True)
 
             lamp_images_pre = lamp_images_post.copy()
 
             logging.info(f"Interaction with switch {idx+1} of {len(switch_nodes)} finished")
-            end_time_switch = time.time()
-            logging.info(f"Switch interaction time: {end_time_switch - end_time_affordance}")
+            switch_interaction_end_time = time.time()
+            logging.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
             end_time_total = time.time()
-            logging.info(f"total time per switch: {end_time_total - pose_start_time}")
+            logging.info(f"Total time per switch: {end_time_total - body_to_switch_start_time}")
 
         stow_arm()
         return frame_name
