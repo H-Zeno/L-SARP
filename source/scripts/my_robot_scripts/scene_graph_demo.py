@@ -4,7 +4,10 @@ import time
 import numpy as np
 import copy
 import matplotlib.pyplot as plt
-from typing import List
+import sys
+import os
+import pandas as pd
+from typing import List, Optional
 from bosdyn.client import Sdk
 from robot_utils.base import ControlFunction, take_control_with_function
 from robot_utils.basic_movements import carry_arm, stow_arm, move_body, gaze, move_arm
@@ -29,17 +32,14 @@ from utils.light_switch_detection import predict_light_switches
 from utils.affordance_detection_light_switch import compute_advanced_affordance_VLM_GPT4, check_lamp_state
 from utils.object_detetion import BBox, Detection, Match
 
+# Import LostFound modules
+from LostFound.src import (
+    SceneGraph,
+    preprocess_scan,
+)
 
-import sys
-import os
-# sys.path.append(os.path.abspath("/home/cvg-robotics/tim_ws/3D-Scene-Understanding"))
-
-# import scene_graph
-import pandas as pd
-from scenegraph.scene_graph import SceneGraph
-from scenegraph.preprocessing import preprocess_scan
+# The drawer_integration is only in the Spotlight repo!!
 from scenegraph.drawer_integration import parse_txt
-
 
 frame_transformer = FrameTransformerSingleton()
 graph_nav_client = GraphNavClientSingleton()
@@ -80,28 +80,42 @@ NUM_REFINEMENTS_MAX_TRIES = 1
 BOUNDING_BOX_OPTIMIZATION = True
 SHUFFLE = False
 
-# SCAN_DIR = "/home/cvg-robotics/tim_ws/spot-compose-tim/data/prescans/24-08-17a"
 base_path = config.get_subpath("prescans")
 ending = config["pre_scanned_graphs"]["high_res"]
 SCAN_DIR = os.path.join(base_path, ending)
 
 
-def get_scene_graph(SCAN_DIR: str):
+def get_scene_graph(SCAN_DIR: str, categories_to_remove: Optional[List[str]] = ["curtain", "door"], transform_to_spot_frame: bool = True) -> SceneGraph:
+    """
+    This function builds a semantic 3D scene graph based on the instance segmentated 3D point clouds by Mask3D
+    
+    Args:
+        SCAN_DIR (str): The directory of the prescan data (prescans, defined in config.yaml).
+        categories_to_remove (Optional[List[str]]): The object categories to remove from the scene graph, default is "curtain" and "door".
+        transform_to_spot_frame (bool): Whether to transform the scene graph to the coordinate system of the Spot robot.
+
+    Returns:
+        SceneGraph: The scene graph object.
+    """
     # instantiate the label mapping for Mask3D object classes (would change if using different 3D instance segmentation model)
     label_map = pd.read_csv(SCAN_DIR + '/mask3d_label_mapping.csv', usecols=['id', 'category'])
     mask3d_label_mapping = pd.Series(label_map['category'].values, index=label_map['id']).to_dict()
     preprocess_scan(SCAN_DIR, drawer_detection=True, light_switch_detection=True)
     T_ipad = np.load(SCAN_DIR + "/aruco_pose.npy")
-    scene_graph = SceneGraph(label_mapping=mask3d_label_mapping, min_confidence=0.2,
-                            unmovable=["armchair", "bookshelf", "end table", "shelf"], pose=T_ipad)
-    scene_graph.build(SCAN_DIR, drawers=False)
-    scene_graph.color_with_ibm_palette()
-    scene_graph.remove_category("curtain")
+    immovable=["armchair", "bookshelf", "end table", "shelf", "coffee table", "dresser"]
+    scene_graph = SceneGraph(label_mapping=mask3d_label_mapping, min_confidence=0.2, immovable=immovable, pose=T_ipad)
+    scene_graph.build(SCAN_DIR, drawers=False, light_switches=False)
 
-    # to transform to Spot coordinate system:
-    T_spot = parse_txt(os.path.join(SCAN_DIR, "icp_tform_ground.txt"))#"/home/cvg-robotics/tim_ws/spot-compose-tim/data/prescans/24-08-17a/icp_tform_ground.txt")
-    scene_graph.change_coordinate_system(
-        T_spot)  # where T_spot is a 4x4 transformation matrix of the aruco marker in Spot coordinate system
+    # potentially remove a category
+    for category in categories_to_remove:
+        scene_graph.remove_category(category)
+
+    scene_graph.color_with_ibm_palette()
+    
+    if transform_to_spot_frame:
+        # to transform to Spot coordinate system:
+        T_spot = parse_txt(os.path.join(SCAN_DIR, "icp_tform_ground.txt"))
+        scene_graph.change_coordinate_system(T_spot)  # where T_spot is a 4x4 transformation matrix of the aruco marker in Spot coordinate system
 
     return scene_graph
 
@@ -293,16 +307,14 @@ class _Push_Light_Switch(ControlFunction):
         **kwargs,
     ) -> str:
 
-
-        start_time = time.time()
-
-        set_gripper_camera_params('640x480')
-
-        # get scene graph
+        # get scene graph and visualize it
         scene_graph = get_scene_graph(SCAN_DIR)
-
         scene_graph.visualize(labels=True, connections=True, centroids=True)
 
+
+        start_time = time.time()
+        set_gripper_camera_params('640x480')
+        
         # get light switch and lamp nodes
         sem_label_switch = next((k for k, v in scene_graph.label_mapping.items() if v == "light switch"), None)
         sem_label_lamp = next((k for k, v in scene_graph.label_mapping.items() if v == "lamp"), None)
@@ -312,9 +324,9 @@ class _Push_Light_Switch(ControlFunction):
         for node in scene_graph.nodes.values():
             if node.sem_label == sem_label_switch:
                 # compute face normal of light switch
-                node.set_normal(np.array([-1, 0, 0]))
+                # the normal is set to -x direction (HARDCODED)
+                node.set_normal(np.array([-1, 0, 0])) 
                 switch_nodes.append(node)
-
 
         POSES_LAMPS = [Pose3D(node.centroid) for node in lamp_nodes]
         IDS_LAMPS = [node.object_id for node in lamp_nodes]
@@ -324,10 +336,12 @@ class _Push_Light_Switch(ControlFunction):
         end_time_localization = time.time()
         logging.info(f"Localization time: {end_time_localization - start_time}")
 
-        set_gripper_camera_params('1280x720')
+        
         #################################
         # check lamp states pre interaction
         #################################
+
+        set_gripper_camera_params('1280x720')
         move_body(POSE_CENTER, frame_name)
         lamp_images_pre = check_lamps(POSES_LAMPS, frame_name)
 
@@ -351,7 +365,6 @@ class _Push_Light_Switch(ControlFunction):
 
             push_light_switch(pose, frame_name, z_offset=True, forces=FORCES)
 
-            a = 2
             #################################
             # refine handle position
             #################################
