@@ -7,8 +7,31 @@ import projectaria_tools.core.mps as mps
 from projectaria_tools.core import data_provider, calibration
 from projectaria_tools.core.mps.utils import filter_points_from_confidence
 
-def pose_aria_pointcloud(scan_dir, marker_type=cv2.aruco.DICT_APRILTAG_36h11, aruco_length=0.148, save_aria_pcd=True, vis_detection=False, vis_poses=False):
-    """ Finds the first aruco marker in the given vrs file of the scan directory and returns the pose of the marker in the world frame"""
+def pose_aria_pointcloud(
+    scan_dir: str,
+    marker_type: int = cv2.aruco.DICT_APRILTAG_36h11,
+    id: int = 52,
+    aruco_length: float = 0.148,
+    save_aria_pcd: bool = True,
+    vis_detection: bool = False,
+    vis_poses: bool = False
+) -> np.ndarray | None:
+    """
+    Finds and returns the pose of the first ArUco marker in the world frame within a VRS file.
+
+    This function scans the specified directory for a VRS file, identifies the first occurrence of the specified 
+    ArUco marker, and calculates its pose in the world frame. If no marker is found, a warning is printed, and 
+    the function returns None. The pose can be visualized, and the resulting point cloud can optionally be saved.
+
+    :param scan_dir: Path to the directory containing the VRS file with the scan data.
+    :param marker_type: Type of ArUco marker dictionary used for detection. Defaults to AprilTag 36h11.
+    :param id: ID of the specific ArUco marker to detect. Defaults to 52.
+    :param aruco_length: Physical length of the ArUco marker in meters, used for pose estimation. Defaults to 0.148.
+    :param save_aria_pcd: Flag indicating whether to save the generated point cloud of the Aria data. Defaults to True.
+    :param vis_detection: Flag to enable visualization of the detection process. Defaults to False.
+    :param vis_poses: Flag to enable visualization of the calculated poses. Defaults to False.
+    :return: 4x4 numpy array representing the pose of the detected marker in the world frame, or None if no marker is found.
+    """
     vrs_files = glob.glob(os.path.join(scan_dir, '*.vrs'))
     assert vrs_files is not None, "No vrs files found in directory"
     vrs_file = vrs_files[0]
@@ -67,7 +90,9 @@ def pose_aria_pointcloud(scan_dir, marker_type=cv2.aruco.DICT_APRILTAG_36h11, ar
         
         corners, ids, _ = cv2.aruco.detectMarkers(aruco_image, arucoDict, parameters=arucoParams)
 
-        if len(corners) > 0:            
+        if len(corners) > 0:
+            matching = np.array(ids)==id
+            if not np.any(matching): continue
             rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, aruco_length, cam_matrix, 0)
             rotation_3x3, _ = cv2.Rodrigues(rvecs)
             T_camera_marker = np.eye(4)
@@ -134,8 +159,6 @@ def pose_aria_pointcloud(scan_dir, marker_type=cv2.aruco.DICT_APRILTAG_36h11, ar
             return T_world_marker
     
     print("No marker found for pose estimation")
-
-
 def convert_z_up_to_y_up(pcd_path):
     """ Converts a given pointcloud from z-up to y-up coordinate system."""
     rot_z_90 = np.array([[np.cos(np.pi/2), -np.sin(np.pi/2), 0, 0],
@@ -155,9 +178,29 @@ def convert_z_up_to_y_up(pcd_path):
     pcd.transform(inverse)
 
     o3d.io.write_point_cloud(pcd_path[:-4] + "_y_up.ply", pcd)
+def pose_ipad_pointcloud(
+    scan_dir: str,
+    pcd_path: str = None,
+    marker_type: int = cv2.aruco.DICT_APRILTAG_36h11,
+    id: int = 52,
+    aruco_length: float = 0.148,
+    vis_detection: bool = False
+) -> np.ndarray | None:
+    """
+    Finds and returns the pose of the first ArUco marker in the world frame within an iPad scan.
 
-def pose_ipad_pointcloud(scan_dir, pcd_path=None, marker_type=cv2.aruco.DICT_APRILTAG_36h11, aruco_length=0.148, vis_detection=False):
-    """ Finds the first aruco marker in the given iPad scan and returns the pose of the marker in the world frame."""
+    This function scans the specified directory for an iPad scan file, identifies the first occurrence of the specified 
+    ArUco marker, and calculates its pose in the world frame. If no marker is found, the function prints a warning 
+    and returns None. Optionally, a point cloud file path can be provided, and detection visualization can be enabled.
+
+    :param scan_dir: Path to the directory containing the iPad scan data.
+    :param pcd_path: Optional path to save or load the point cloud data associated with the iPad scan. Defaults to None.
+    :param marker_type: Type of ArUco marker dictionary used for detection. Defaults to AprilTag 36h11.
+    :param id: ID of the specific ArUco marker to detect. Defaults to 52.
+    :param aruco_length: Physical length of the ArUco marker in meters, used for pose estimation. Defaults to 0.148.
+    :param vis_detection: Flag to enable visualization of the detection process. Defaults to False.
+    :return: 4x4 numpy array representing the pose of the detected marker in the world frame, or None if no marker is found.
+    """
     image_files = sorted(glob.glob(os.path.join(scan_dir, 'frame_*.jpg')))
 
     for image_name in image_files:
@@ -178,6 +221,8 @@ def pose_ipad_pointcloud(scan_dir, pcd_path=None, marker_type=cv2.aruco.DICT_APR
         corners, ids, _ = cv2.aruco.detectMarkers(image, arucoDict, parameters=arucoParams)
 
         if len(corners) > 0:
+            matching = np.array(ids)==id
+            if not np.any(matching): continue
             rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, aruco_length, cam_matrix, 0)
             rotation_3x3, _ = cv2.Rodrigues(rvecs)
             T_camera_marker = np.eye(4)
@@ -289,20 +334,31 @@ def spot_to_aria_coords(points, aria_transform):
     points = np.dot(aria_transform, np.vstack((points.T, np.ones(points.shape[0])))).T[:, :3]
 
     return points
+def icp_alignment(
+    source_folder: str,
+    target_folder: str,
+    T_init: np.ndarray = np.eye(4)
+) -> np.ndarray:
+    """
+    Aligns the source point cloud to the target point cloud using the Iterative Closest Point (ICP) algorithm.
 
+    This function loads point cloud data from the specified source and target folders, then aligns the source 
+    point cloud to the target point cloud by applying the ICP algorithm. An initial transformation matrix can 
+    be provided to guide the alignment process. The function returns the transformation matrix that aligns 
+    the source to the target.
 
-def icp_alignment(source_folder, target_folder, T_init=np.eye(4)):
-    """Aligns the source pointcloud to the target pointcloud using ICP."""
+    :param source_folder: Path to the folder containing the source point cloud data.
+    :param target_folder: Path to the folder containing the target point cloud data.
+    :param T_init: Initial 4x4 transformation matrix to start the alignment. Defaults to the identity matrix.
+    :return: 4x4 numpy array representing the transformation matrix aligning the source to the target.
+    """
     source_pcd = o3d.io.read_point_cloud(source_folder + "/mesh_labeled.ply")
     target_pcd = o3d.io.read_point_cloud(target_folder + "/aria_pointcloud.ply")
 
-    # source_pcd.estimate_normals()
-    # target_pcd.estimate_normals()
-
     reg_p2l = o3d.pipelines.registration.registration_icp(
         source_pcd, target_pcd, 0.05, T_init,
-        # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
         criteria=o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=4000))
     
     source_pcd.transform(reg_p2l.transformation)
-    o3d.io.write_point_cloud(target_folder + "/mesh_labeled.ply", source_pcd)
+    
+    return np.array(reg_p2l.transformation)
