@@ -55,7 +55,6 @@ def predict_light_switches(image: np.ndarray, image_name: str, vis_block: bool =
 
     boxes, conf = filter_detections_ultralytics(detections=results_predict)
 
-    a = 2
     if boxes.shape[0] == 0:
         return [], 0
 
@@ -84,4 +83,3 @@ if __name__ == "__main__":
     image = cv2.imread(image_name)
 
     detections = predict_light_switches(image, image_name, vis_block=True)
-    a = 2
