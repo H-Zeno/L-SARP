@@ -2,12 +2,35 @@ import os
 import argparse
 import numpy as np
 import open3d as o3d
+import cv2
+from .yolo_integration import register_drawers, register_light_switches
+from .camera_transforms import pose_ipad_pointcloud, pose_aria_pointcloud, icp_alignment
 
-from scenegraph.camera_transforms import pose_ipad_pointcloud
-from scenegraph.drawer_integration import register_drawers, register_light_switches
 
-def preprocess_scan(scan_dir, drawer_detection=False, light_switch_detection=False):
-    """ runs the drawer detection on the iPad scan and overwrites detected drawers in the mask3d prediction"""
+def preprocess_scan(
+    scan_dir: str,
+    drawer_detection: bool = False,
+    light_switch_detection: bool = False,
+    marker_type: int = cv2.aruco.DICT_APRILTAG_36h11,
+    marker_id: int = 52,
+    aruco_length: float = 0.148
+) -> np.ndarray | None:
+    """
+    Preprocesses an iPad scan by performing optional object detections and updating 3D mask predictions.
+
+    This function processes the specified scan directory to perform drawer and light switch detections,
+    and searches for a specified ArUco marker in the image sequence. Detected drawers are used to update
+    the 3D mask prediction file, and if the specified ArUco marker is found, the function returns a 
+    4x4 transformation matrix representing the marker's pose.
+
+    :param scan_dir: Path to the directory containing the scan images.
+    :param drawer_detection: Flag indicating whether to perform drawer detection.
+    :param light_switch_detection: Flag indicating whether to perform light switch detection.
+    :param marker_type: ArUco marker dictionary type for marker detection.
+    :param marker_id: ID of the specific ArUco marker to detect.
+    :param aruco_length: Physical length of the ArUco marker in meters, used for pose estimation.
+    :return: 4x4 numpy array representing the pose of the detected marker, or None if no marker is found.
+    """
     with open(scan_dir + "/predictions.txt", 'r') as file:
         lines = file.readlines()
 
@@ -59,8 +82,51 @@ def preprocess_scan(scan_dir, drawer_detection=False, light_switch_detection=Fal
             file.writelines(light_lines)
     
     if not os.path.exists(scan_dir + "/aruco_pose.npy"):
-        T_ipad = pose_ipad_pointcloud(scan_dir)
+        T_ipad = pose_ipad_pointcloud(scan_dir, marker_type=marker_type, id=marker_id, aruco_length=aruco_length)
+        if T_ipad is None:
+            return None
         np.save(scan_dir + "/aruco_pose.npy", T_ipad)
+    else:
+        T_ipad = np.load(scan_dir + "/aruco_pose.npy")
+    
+    return T_ipad
+    
+def preprocess_aria(
+    scan_dir: str,
+    aria_dir: str,
+    marker_type: int = cv2.aruco.DICT_APRILTAG_36h11,
+    marker_id: int = 52,
+    aruco_length: float = 0.148
+) -> np.ndarray | None:
+    """
+    Preprocesses data from Aria and iPad scans, performing marker detection and pose estimation.
+
+    This function loads data from both the scan directory and the Aria device directory, detecting a 
+    specified ArUco marker in the image sequences. If the specified marker is found, it returns a 
+    4x4 transformation matrix representing the marker’s pose relative to the camera.
+
+    :param scan_dir: Path to the directory containing the iPad scan images.
+    :param aria_dir: Path to the directory containing the Aria device data.
+    :param marker_type: ArUco marker dictionary type for marker detection.
+    :param marker_id: ID of the specific ArUco marker to detect.
+    :param aruco_length: Physical length of the ArUco marker in meters, used for pose estimation.
+    :return: 4x4 numpy array representing the pose of the detected marker, or None if no marker is found.
+    """
+    if not os.path.exists(aria_dir  + "/icp_aligned_pose.npy"):
+        if os.path.exists(aria_dir + "/aruco_pose.npy"):
+            T_aria = np.load(aria_dir + "/aruco_pose.npy")
+        else:
+            T_aria = pose_aria_pointcloud(aria_dir, marker_type=marker_type, id=marker_id, aruco_length=aruco_length)
+            if T_aria is None:
+                return None
+            np.save(aria_dir + "/aruco_pose.npy", T_aria)
+        
+        T_ipad = np.load(scan_dir + "/aruco_pose.npy")
+
+        T_scan_aria = icp_alignment(scan_dir, aria_dir, T_init=np.dot(T_aria, np.linalg.inv(T_ipad)))
+        np.save(aria_dir + "/icp_aligned_pose.npy", T_scan_aria)
+    
+    return True
 
 if __name__ == "__main__":
    parser = argparse.ArgumentParser(description='Preprocess the iPad Scan.')
