@@ -1,8 +1,14 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import numpy as np
-from scipy.spatial import KDTree, ConvexHull
+from scipy.spatial import KDTree
 import open3d as o3d
-import os, glob, pickle
-from collections import deque
+import os, pickle
+from typing import Optional
+
+from .graph_nodes import ObjectNode, DrawerNode, LightSwitchNode
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 from sklearn.cluster import DBSCAN
@@ -14,162 +20,53 @@ import imageio, datetime, time
 from tqdm import tqdm
 import random
 
-
-class ObjectNode:
-    def __init__(self, object_id, color, sem_label, points, mask, confidence=None, movable=True):
-        self.object_id = object_id
-        self.centroid = np.mean(points, axis=0)
-        self.points = points
-        self.sem_label = sem_label
-        self.color = color
-        self.movable = movable
-        self.confidence = confidence
-        self.visible = True
-        self.mask = mask
-        self.update_hull_tree()
-
-        # lamp gets state attribute
-        if sem_label == 28:
-            self.state = "state unknown"
-    
-    def update_hull_tree(self):
-        self.hull_tree = KDTree(self.points[ConvexHull(self.points).vertices])
-    
-    def transform(self, transformation):
-        """ Transform the points of the node using a translation, rotation, or homogeneous transformation matrix."""
-        if isinstance(transformation, np.ndarray):
-            if transformation.shape == (3,):
-                self.centroid += transformation
-                self.points += transformation
-                self.update_hull_tree()
-            elif transformation.shape == (3, 3):
-                self.points = np.dot(transformation, self.points.T).T
-                self.centroid = np.dot(transformation, self.centroid)
-                self.update_hull_tree()
-            elif transformation.shape == (4, 4):
-                self.points = np.dot(transformation, np.vstack((self.points.T, np.ones(self.points.shape[0])))).T[:, :3]
-                self.centroid = np.dot(transformation, np.append(self.centroid, 1))[:3]
-                self.update_hull_tree()
-            else:
-                raise ValueError("Invalid argument shape. Expected (3,) for translation, (3,3) for rotation, or (4,4) for homogeneous transformation.")
-        else:
-            raise TypeError("Invalid argument type. Expected numpy.ndarray.")
-
-    def set_state(self, state):
-
-        if state not in ["on", "off", "state unknown"]:
-            raise ValueError("Invalid state. Expected 'on' or 'off'.")
-
-        self.state = state
-
-class DrawerNode(ObjectNode):
-    def __init__(self, object_id, color, sem_label, points, mask, confidence=1.0, movable=True):
-        super().__init__(object_id, color, sem_label, points, mask, confidence, movable)
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-        self.equation, _ = pcd.segment_plane(distance_threshold=0.02, ransac_n=3, num_iterations=1000)
-        self.box = None
-        self.contains = []
-    
-    def sign_check(self, point):
-        return np.dot(self.equation[:3], point) + self.equation[3] > 0
-    
-    def add_box(self, shelf_centroid):
-        intersection = self.compute_intersection(shelf_centroid)
-        
-        bbox_points = []
-        for point in self.points:
-            bbox_points.append(point)
-            bbox_points.append(point + 2* (shelf_centroid - intersection))
-
-        points = np.array(bbox_points)
-
-        tmp_pcd = o3d.geometry.PointCloud()
-        tmp_pcd.points = o3d.utility.Vector3dVector(points)
-          
-        self.box = tmp_pcd.get_minimal_oriented_bounding_box()
-    
-    def compute_intersection(self, ray_start):
-        signed_distance = (np.dot(self.equation[:3], ray_start) + self.equation[3]) / np.linalg.norm(self.equation[:3])
-        
-        if signed_distance > 0:
-            direction = -self.equation[:3]  # Move in the negative normal direction
-        else:
-            direction = self.equation[:3]  # Move in the positive normal direction
-
-        numerator = - (np.dot(self.equation[:3], ray_start) + self.equation[3])
-        denominator = np.dot(self.equation[:3], direction)
-
-        if denominator == 0:
-            raise ValueError("The ray is parallel to the plane and does not intersect it.")
-        
-        t = numerator / denominator
-        intersection_point = ray_start + t * direction
-
-        return intersection_point
-    
-    def transform(self, transformation):
-        super().transform(transformation)
-        if isinstance(transformation, np.ndarray):
-            if transformation.shape == (3,):
-                self.box.translate(transformation)
-            elif transformation.shape == (4, 4):
-                translation = transformation[:3, 3]
-                rotation = transformation[:3, :3]
-                self.box = self.box.rotate(rotation, center=np.array([0, 0, 0]))
-                self.box.translate(translation)
-        for node in self.contains:
-            node.transform(transformation)
-        
-    # def transform(self, *args):
-    #     # TODO: haven't checked if this is working correctly
-    #     for arg in args:
-    #         if isinstance(arg, np.ndarray):
-    #             if arg.shape == (3,):
-    #                 normal = self.equation[:3]
-    #                 normal /= np.linalg.norm(normal)
-    #                 translation = np.dot(arg, normal) * normal
-    #                 self.centroid += translation
-    #                 self.points += translation
-    #                 self.box.translate(translation)
-    #                 self.update_hull_tree()
-    #             elif arg.shape == (4, 4):
-    #                 translation = arg[:3, 3]
-    #                 normal = self.equation[:3]
-    #                 normal /= np.linalg.norm(normal)
-    #                 translation = np.dot(translation, normal) * normal
-    #                 self.points += translation
-    #                 self.centroid += translation
-    #                 self.box.translate(translation)
-    #                 self.update_hull_tree()
-    #             else:
-    #                 raise ValueError("Invalid argument shape. Expected (3,) for translation or (4,4) for homogeneous transformation.")
-    #         else:
-    #             raise TypeError("Invalid argument type. Expected numpy.ndarray.")
-
-class LightSwitchNode(ObjectNode):
-    def __init__(self, object_id, color, sem_label, points, mask, confidence=1.0, movable=True):
-        super().__init__(object_id, color, sem_label, points, mask, confidence, movable)
-        self.lamps = []
-        self.button_count = "unknown"
-        self.interaction = "unknown"
-        self.normal = None
-
-    def add_lamp(self, lamp_id):
-        # TODO: should we check if this is really a lamp? (would be easy)
-        self.lamps.append(lamp_id)
-
-    def set_button_count(self, count):
-        self.button_count = count
-
-    def set_interaction_type(self, interaction: str):
-        self.interaction = interaction
-
-    def set_normal(self, normal):
-        self.normal = normal
-
 class SceneGraph:
-    def __init__(self, label_mapping = dict(), min_confidence = 0.0,  k=2, unmovable=[], pose=None):
+    """
+    Represents a scene graph to manage and organize connections between nodes in a 3D scene.
+
+    The SceneGraph class is designed to structure relationships between various nodes
+    in a 3D scene, maintaining connectivity, labels, and hierarchical relationships, also
+    during transformations applied to the scene/nodes. 
+    It supports efficient queries and manages node attributes.
+
+    Attributes:
+        index (int): Counter to keep track of unique indices for nodes in the scene graph.
+        nodes (dict): Dictionary to store nodes in the scene graph, keyed by unique node IDs.
+        labels (dict): Mapping of node IDs to semantic labels.
+        outgoing (dict): Tracks outgoing connections for each node, representing directed edges.
+        ingoing (dict): Tracks ingoing connections for each node, representing directed edges, mutiple ingoing connections are possible.
+        tree (Optional[spatial.KDTree]): KDTree for efficient spatial queries, if applicable.
+        ids (list): List of node IDs present in the scene graph, is updated after addition or deletion of nodes.
+        k (int): Number of nearest neighbors to consider for spatial relations. Defaults to 2.
+        label_mapping (dict): Dictionary for mapping semantic labels.
+        min_confidence (float): Minimum confidence threshold for including nodes in the scene.
+        immovable (list): List of IDs or labels representing nodes that cannot be moved.
+        pose (Optional[np.ndarray]): Pose of the entire scene graph, if applicable.
+        mesh (Optional[o3d.geometry.TriangleMesh]): Central mesh representation of the scene, if applicable.
+        pcd (Optional[o3d.geometry.PointCloud]): Central point cloud representation of the scene, if applicable.
+    """
+
+    def __init__(
+        self,
+        label_mapping: dict = dict(),
+        min_confidence: float = 0.0,
+        k: int = 2,
+        immovable: list = [],
+        pose: Optional[np.ndarray] = None
+    ):
+        """
+        Initializes a SceneGraph with default configurations and empty connectivity structures.
+
+        This constructor sets up the initial data structures for managing nodes and connections in the 
+        scene graph, including labels, ingoing and outgoing connections, and spatial properties. 
+        Additional parameters allow configuration of label mappings, confidence thresholds, and immovable nodes.
+
+        :param label_mapping: Dictionary for mapping semantic labels to node IDs or categories.
+        :param min_confidence: Minimum confidence threshold for including nodes in the scene. Defaults to 0.0.
+        :param k: Number of nearest neighbors to consider for spatial relations. Defaults to 2.
+        :param immovable: List of IDs or labels representing nodes that cannot be moved. Defaults to an empty list.
+        :param pose: Optional 4x4 numpy array representing the pose of the entire scene graph. Defaults to None.
+        """
         self.index = 0
         self.nodes = dict()
         self.labels = dict()
@@ -180,64 +77,85 @@ class SceneGraph:
         self.k = k
         self.label_mapping = label_mapping
         self.min_confidence = min_confidence
-        self.unmovable = unmovable
+        self.immovable = immovable
         self.pose = pose
         self.mesh = None
+        self.pcd = None
     
-    def change_coordinate_system(self, transformation):
+    def change_coordinate_system(self, transformation: np.ndarray) -> None:
+        """
+        Applies a transformation to change the coordinate system of the entire scene graph.
+
+        This method updates the coordinate system of all nodes and associated spatial data in the 
+        scene graph by applying a given transformation matrix. The transformation affects the pose 
+        of each node and any central scene representations such as point clouds or meshes.
+
+        :param transformation: A 4x4 transformation matrix to apply to the scene graph’s coordinate system.
+        :return: None. The coordinate system of nodes and spatial data is modified in place.
+        """
         if self.pose is not None:
-            # TODO: Tim, I dont get it or this is not working correctly. If this is done, the transformation to spot system is not correct.
-            # trans_inv = np.linalg.inv(self.pose)
-            # transformation = np.dot(transformation, trans_inv)
-            transformation = transformation
+            trans_inv = np.linalg.inv(self.pose)
+            transformation = np.dot(transformation, trans_inv)
         for node in self.nodes.values():
-            node.transform(transformation)
+            node.transform(transformation, force=True)
         if self.mesh is not None:
             self.mesh.transform(transformation)
+        if self.pcd is not None:
+            self.pcd.transform(transformation)
         self.tree = KDTree(np.array([self.nodes[index].centroid for index in self.ids]))
 
-    def add_node(self, color, sem_label, points, confidence, mask):
-        if self.label_mapping.get(sem_label, "ID not found") in self.unmovable:
-            # mark objects as unmovable if a list was given
+    def add_node(
+        self,
+        color: tuple,
+        sem_label: str,
+        points: np.ndarray,
+        tracking_points: list,
+        mesh_mask: np.ndarray,
+        confidence: float
+    ) -> int:
+        """
+        Adds a new node to the scene graph with specified attributes.
+
+        This method creates a new node with the given properties, such as color, semantic label, 
+        and 3D point data, and adds it to the scene graph. The node is assigned a unique identifier, 
+        and its spatial properties and metadata are stored within the graph.
+        Special node types, such as drawers or light switches, are handeled as well.
+
+        :param color: RGB color tuple representing the node's color.
+        :param sem_label: Semantic label categorizing the node (e.g., "drawer", "light switch").
+        :param points: Array of 3D points defining the node's geometry.
+        :param tracking_points: List of key points used for tracking the node’s position.
+        :param mesh_mask: Binary mask representing the node's mesh structure.
+        :param confidence: Confidence score associated with the node's detection or classification.
+        """
+        if self.label_mapping.get(sem_label, "ID not found") in self.immovable:
+            # mark objects as immovable if a list was given
             # TODO: could in the future either be a complete list or LLM api request for open vocabulary
-            self.nodes[self.index] = ObjectNode(self.index, np.array([0.5, 0.5, 0.5]), sem_label, points, confidence, mask, movable=False)
+            self.nodes[self.index] = ObjectNode(self.index, np.array([0.5, 0.5, 0.5]), sem_label, points, tracking_points, mesh_mask, confidence, movable=False)
         elif sem_label == 25:
-            self.nodes[self.index] = DrawerNode(self.index, color, sem_label, points, confidence, mask)
+            self.nodes[self.index] = DrawerNode(self.index, color, sem_label, points, tracking_points, mesh_mask, confidence)
         elif sem_label == 232:
-            self.nodes[self.index] = LightSwitchNode(self.index, color, sem_label, points, confidence, mask)
+            self.nodes[self.index] = LightSwitchNode(self.index, color, sem_label, points, tracking_points, mesh_mask, confidence)
         else:
-            self.nodes[self.index] = ObjectNode(self.index, color, sem_label, points, confidence, mask)
+            self.nodes[self.index] = ObjectNode(self.index, color, sem_label, points, tracking_points, mesh_mask, confidence)
         self.labels.setdefault(sem_label, []).append(self.index)
         self.ids.append(self.index)
         self.index += 1
     
-    # def add_drawer(self, points):
-    #     self.nodes[self.index] = DrawerNode(self.index, np.random.rand(3), 25, points)
-    #     self.labels.setdefault(25, []).append(self.index)
-    #     self.ids.append(self.index)
-    #     # TODO: theoretically, the shelf it gets connected to has to be updated as well (same for regular node)
-    #     self.update_connection(self.nodes[self.index])
-    #     self.index += 1
-    
-    def update_connection(self, node):
-        """ Updates the connection of the given node to the closest other node. Deletes the previous connections."""
+    def update_connection(self, node: ObjectNode) -> None:
+        """
+        Updates the connection of the specified node to its nearest neighboring node in the scene graph.
+
+        This method identifies the closest neighboring node to the provided `node` object and updates 
+        its connections accordingly. Any existing connections to other nodes are removed before 
+        establishing the new connection.
+
+        :param node: The node (of type ObjectNode or one of its subclasses) whose connections need to be updated.
+        :return: None. The method updates the connections in the scene graph in place.
+        """
         min_index, min_dist = None, None
-        if isinstance(node, DrawerNode):
-            # iterate through all added shelfs in the scene (TODO: how to handle this in the future),
-            # this restricts drawers to be added to shelf only
-            labels = [item for sublist in [self.labels.get(l, []) for l in [7, 8, 18, 44]] for item in sublist]
-            for idx in labels:
-                other = self.nodes[idx]
-                if other.object_id != node.object_id:
-                    dist = np.linalg.norm(node.centroid - other.centroid)
-                    if min_dist is None or dist < min_dist:
-                        min_dist = dist
-                        min_index = other.object_id
-            # if min_dist > 1.0:
-            #     print("No shelf found for drawer.")
-            #     return
         # add the regular node based on the closest other node
-        elif isinstance(node, ObjectNode):
+        if isinstance(node, ObjectNode):
             # TODO: if I am really just doing this for the closest node, I could just use the tree query
             for other in self.nodes.values():
                 if other.object_id != node.object_id:
@@ -247,45 +165,93 @@ class SceneGraph:
                         min_index = other.object_id
         else:
             raise TypeError("Invalid node type. Expected ObjectNode or DrawerNode.")
-        # Actual updating of the connection:
-        # set a one-way connection from the current node to the closest partner, if one was found
+        
         tmp = self.outgoing.get(node.object_id, None)
-        if min_index is not None and tmp != min_index:
-            # TODO: extend and test this for drawers
-            if isinstance(self.nodes[min_index], DrawerNode) and self.nodes[min_index].box is not None:
-                index = self.nodes[min_index].box.get_point_indices_within_bounding_box(o3d.utility.Vector3dVector([node.centroid]))
-                print(index)                    
-            # the node is not connected to tmp anymore
+        if min_index is not None and tmp != min_index:                               
             if tmp is not None:
                 self.ingoing[tmp].remove(node.object_id)
-            # each node has only one connection to another node
             self.outgoing[node.object_id] = min_index
-            # a node might has mutiple connections from other nodes
             self.ingoing.setdefault(min_index, []).append(node.object_id)
-    
-    def init_graph(self):
-        """ This assumes, no connection has been made before.
-        ALWAYS has to be called once the graph is initially built."""
-        for node in self.nodes.values():
-            self.update_connection(node)
-            if self.outgoing.get(node.object_id, None) is None:
-                continue
-            if isinstance(node, DrawerNode):
-                node.add_box(self.nodes[self.outgoing[node.object_id]].centroid)
+        if min_index is not None:
+            if isinstance(self.nodes[min_index], DrawerNode) and self.nodes[min_index].box is not None:
+                inside = self.nodes[min_index].box.get_point_indices_within_bounding_box(o3d.utility.Vector3dVector([node.centroid]))
+                if len(inside) and node not in self.nodes[min_index].contains:
+                    self.nodes[min_index].contains.append(node)
+                    node.visible = False
 
     def get_node_info(self):
+        # TODO: json representation of the graph?
         for node in self.nodes.values():
             print(f"Object ID: {node.object_id}")
             print(f"Centroid: {node.centroid}")
             print("Semantic Label: " + self.label_mapping.get(node.sem_label, "ID not found"))
             print(f"Confidence: {node.confidence}")
     
-    def save(self, file_path):
-        """ Saves the scene graph to a pickle file. """
+    def save(self, file_path: str) -> None:
+        """
+        Saves the entire scene graph to a specified file using pickle serialization.
+
+        This method serializes the scene graph object and writes it to a file in pickle format, 
+        allowing for easy storage and retrieval. The file can later be loaded to reconstruct the 
+        scene graph in its current state.
+
+        :param file_path: Path to the file where the scene graph will be saved.
+        :return: None. The scene graph is saved to the specified file.
+        """
         with open(file_path, 'wb') as f:
             pickle.dump(self, f)
     
-    def build(self, scan_dir, drawers = True, light_switches = True):
+    def init_graph(self) -> None:
+        """
+        Initializes the scene graph by establishing initial connections between nodes.
+
+        This method sets up the initial structure of the scene graph, assuming no connections have 
+        been established beforehand. It must be called once after the graph is built to create 
+        the foundational connections and relationships between nodes.
+
+        :return: None. The scene graph's initial connections are established in place.
+        """
+        for node in self.nodes.values():
+            self.update_connection(node)
+            if self.outgoing.get(node.object_id, None) is None:
+                continue
+            if isinstance(node, DrawerNode):
+                # iterate through all added shelfs in the scene
+                min_index, min_dist = None, None
+                labels = [item for sublist in [self.labels.get(l, []) for l in [7, 8, 18, 24, 44, 51]] for item in sublist]
+                for idx in labels:
+                    other = self.nodes[idx]
+                    if other.object_id != node.object_id:
+                        dist = np.linalg.norm(node.centroid - other.centroid)
+                        if min_dist is None or dist < min_dist:
+                            min_dist = dist
+                            min_index = other.object_id
+                node.belongs_to = min_index
+                node.add_box(self.nodes[node.belongs_to].centroid)
+    
+    def build(
+        self,
+        scan_dir: str,
+        aria_dir: Optional[str] = None,
+        drawers: bool = False,
+        light_switches: bool = False
+    ) -> None:
+        """
+        Constructs the scene graph by loading data from the specified directories and initializing nodes 
+        based on available object types.
+
+        This method populates the scene graph with nodes derived from data in the specified scan directory 
+        and, if provided, an optional Aria directory. Aria directory must be specified if one would like to
+        perform tracking of egocentric Aria recordings within the scene graph. Flags allow inclusion of 
+        specific object types, such as drawers and light switches, during the scene graph construction.
+        The respective preprocessing on the scan data must be performed before including these object types.
+
+        :param scan_dir: Path to the directory containing scan data for building the graph.
+        :param aria_dir: Optional path to an additional data directory for further context. Defaults to None.
+        :param drawers: Boolean flag to include drawer nodes in the scene graph. Defaults to False.
+        :param light_switches: Boolean flag to include light switch nodes in the scene graph. Defaults to False.
+        :return: None. The scene graph is built and populated in place.
+        """
         lines = []
         
         with open(os.path.join(scan_dir, 'predictions.txt'), 'r') as file:
@@ -311,56 +277,130 @@ class SceneGraph:
         
         base_dir = os.path.dirname(os.path.abspath(os.path.join(scan_dir, 'predictions.txt')))
 
-        # TODO: textured_output vs export vs export_refined?
-        # TODO: only add the mesh where the mask3d label is 1?
-        self.mesh = o3d.io.read_triangle_mesh(scan_dir + "/export_refined.obj")
+        self.mesh = o3d.io.read_triangle_mesh(scan_dir + "/textured_output.obj", enable_post_processing=True)
 
-        pcd = o3d.io.read_point_cloud(scan_dir + "/mesh_labeled.ply")
+        self.pcd = o3d.io.read_point_cloud(scan_dir + "/mesh_labeled.ply")
 
-        np_points = np.array(pcd.points)
-        np_colors = np.array(pcd.colors)
+        if aria_dir is not None:
+            T = np.load(aria_dir + "/icp_aligned_pose.npy")
+            self.pcd.transform(T)
+            self.mesh.transform(T)
+            self.aria_pcd = o3d.io.read_point_cloud(aria_dir + "/aria_pointcloud.ply")
+            
+            aria_points, ipad_points = np.array(self.aria_pcd.points), np.array(self.pcd.points)
+            aria_tree, ipad_tree = KDTree(aria_points), KDTree(ipad_points)
+
+            _, nn_aria_to_ipad = aria_tree.query(ipad_points)
+            _, nn_ipad_to_aria = ipad_tree.query(aria_points)
+
+            mutual_indeces = -np.ones_like(nn_aria_to_ipad, dtype=np.int64)
+            for i, j in enumerate(nn_aria_to_ipad):
+                if nn_ipad_to_aria[j] == i:
+                    mutual_indeces[i] = j
+
+        np_points = np.array(self.pcd.points)
+        np_colors = np.array(self.pcd.colors)
 
 
-        mask3d_labels = np.zeros(np_points.shape[0], dtype=np.int64)
+        mask3d_labels = np.ones((np_points.shape[0], 2), dtype=np.int64) * -1
         
-
         for i, relative_path in enumerate(file_paths):
             if confidences[i] < self.min_confidence:
                 continue
             file_path = os.path.join(base_dir, relative_path)
             labels = np.loadtxt(file_path, dtype=np.int64)
-            index, counts = np.unique(mask3d_labels[labels==1], return_counts=True)
+            index, counts = np.unique(mask3d_labels[labels == 1, 1], return_counts=True)
             if index.shape[0] == 1:
-                if index[0] == 0 or counts[0] < 10000:
-                    mask3d_labels[labels==1] = values[i]
+                if index[0] == -1 or np.sum(np.loadtxt(os.path.join(base_dir, file_paths[index[0]]), dtype=np.int64)) > np.sum(labels):
+                    mask3d_labels[labels == 1, 0] = values[i]
+                    mask3d_labels[labels == 1, 1] = i
             else:
-                if index[np.argmax(counts)] == 0:
-                    mask3d_labels[np.logical_and(labels == 1 , mask3d_labels == 0)] = values[i]
-                # TODO: rethink this because single points could get multiple labels
-                elif np.max(counts) < 10000 and np.max(counts)/np.sum(counts) > 0.75:
-                    mask3d_labels[labels==1] = values[i]
+                if index[np.argmax(counts)] == -1:
+                    mask3d_labels[np.logical_and(labels == 1, mask3d_labels[:, 0] == -1), 0] = values[i]
+                    mask3d_labels[np.logical_and(labels == 1, mask3d_labels[:, 1] == -1), 1] = i
+                elif np.max(counts) < 10000 and np.max(counts) / np.sum(counts) > 0.75:
+                    mask3d_labels[labels == 1, 0] = values[i]
+                    mask3d_labels[labels == 1, 1] = i
         
         for i, relative_path in enumerate(file_paths):
             file_path = os.path.join(base_dir, relative_path)
             labels = np.loadtxt(file_path, dtype=np.int64)
             
-            node_points = np_points[np.logical_and(labels == 1 , mask3d_labels == values[i])]
-            colors = np_colors[np.logical_and(labels == 1 , mask3d_labels == values[i])]
-            if confidences[i] > self.min_confidence and node_points.shape[0] > 0:
-                self.add_node(colors[0], values[i], node_points, confidences[i], labels)
+            mask = np.logical_and.reduce((labels == 1, mask3d_labels[:, 0] == values[i], mask3d_labels[:, 1] == i))
+            node_points = np_points[mask]
+            tracking_points = np_points[mask]
+            colors = np_colors[mask]
+
+            mesh_mask = np.copy(mask)
+
+            if aria_dir is not None:
+                mask = mutual_indeces[(mask==1) & (mutual_indeces>=0)]
+                tracking_points = aria_points[mask]
+            
+            if confidences[i] > self.min_confidence and node_points.shape[0] > 10:
+                self.add_node(colors[0], values[i], node_points, tracking_points, mesh_mask, confidences[i])
         
         self.init_graph()
         self.tree = KDTree(np.array([self.nodes[index].centroid for index in self.ids]))
+        self.color_with_ibm_palette()
 
-    def get_distance(self, point):
+    def get_centroid_distance(self, point: np.ndarray) -> float:
+        """
+        Calculates the distance from a given point to the nearest node's centroid.
+
+        :param point: A 3D numpy array representing the point of interest.
+        :return: Euclidean distance as a float between the point and the nearest node's centroid.
+        """
         _, idx = self.tree.query(point)
         return np.linalg.norm(point - self.nodes[self.ids[idx]].centroid)
-    
-    def query(self, point):
+
+    def query(self, point: np.ndarray) -> int:
+        """
+        Finds the ID of the node closest to the given point.
+
+        :param point: A 3D numpy array representing the point of interest.
+        :return: The unique ID of the node closest to the specified point.
+        """
         _, idx = self.tree.query(point)
         return self.ids[idx]
+
+    def nearest_node(self, point: Optional[np.ndarray]) -> tuple[float, Optional[int]]:
+        """
+        Finds the nearest movable and visible node to the specified point.
+
+        :param point: A 3D numpy array representing the point of interest. If None, returns infinity and None.
+        :return: A tuple containing:
+            - minimum_distance: Minimum distance as a float to the nearest valid node.
+            - nearest_neighbor_id: ID of the nearest valid node, or None if no valid node is found.
+        """
+        if point is None:
+            return np.inf, None
+        _, neighbor_indices = self.tree.query(point, k=4)
+        neighbor_indices = [
+            self.ids[n_idx]
+            for n_idx in neighbor_indices
+            if (self.nodes[self.ids[n_idx]].movable and self.nodes[self.ids[n_idx]].visible)
+        ]
+
+        if len(neighbor_indices) == 0:
+            return None, None
+        else:
+            nearest_neighbor = np.array([
+                self.nodes[neighbor_idx].hull_tree.query(point, k=1)[0]
+                for neighbor_idx in neighbor_indices
+            ])
+            return np.min(nearest_neighbor), neighbor_indices[np.argmin(nearest_neighbor)]
+
         
-    def remove_node(self, remove_index):
+    def remove_node(self, remove_index: int) -> None:
+        """
+        This method deletes the specified node from the scene graph, removes its connections, 
+        and updates the connections of other nodes that were linked to it. Finally, the KD-tree 
+        is rebuilt to reflect the removal.
+
+        :param remove_index: The unique ID of the node to be removed from the scene graph.
+        :return: None. The node and its connections are removed in place.
+        """
         self.nodes.pop(remove_index, None)
         self.ids.remove(remove_index)
         deleted = self.outgoing.pop(remove_index, None)  
@@ -372,34 +412,69 @@ class SceneGraph:
         self.ingoing.get(deleted, []).remove(remove_index)
         self.tree = KDTree(np.array([self.nodes[index].centroid for index in self.ids]))
 
-    def remove_category(self, category):
+    def remove_category(self, category: str) -> None:
+        """
+        Removes all nodes belonging to a specified category from the scene graph.
+
+        This method identifies nodes in the specified category based on the label mapping 
+        and removes them from the scene graph. Connections are updated accordingly.
+
+        :param category: The category of nodes to be removed from the scene graph.
+        :return: None. All nodes of the specified category are removed in place.
+        """
         label_to_remove = next((label for label, cat in self.label_mapping.items() if cat == category), None)
         for index in self.labels.get(label_to_remove, []):
             self.remove_node(index)
         self.labels.pop(label_to_remove, None)
 
-    def query_object(self):
-        # TODO: is this working?
-        pcd = o3d.geometry.PointCloud()
-        points = np.array(self.mesh.vertices)
-        pcd.points = o3d.utility.Vector3dVector(points)
-        print("")
-        print("1) Please pick at least three correspondences using [shift + left click]")
-        print("   Press [shift + right click] to undo point picking")
-        print("2) After picking points, press 'Q' to close the window")
-        vis = o3d.visualization.VisualizerWithEditing()
-        vis.create_window()
-        vis.add_geometry(pcd)
-        vis.run()
-        vis.destroy_window()        
-        print("")
-        picked_point = vis.get_picked_points()[0]
+    def query_object(self) -> tuple[np.ndarray, int]:
+        """
+        Visualizes the scene graph and allows the user to select a point interactively.
 
-        return self.ids[self.tree.query(picked_point)[1]]
+        This method creates a fused point cloud of all nodes in the scene graph and visualizes it.
+        The user can select a point, which the function then identifies within the scene. The nearest 
+        node's ID is returned alongside the selected point coordinates.
+
+        :return: Tuple containing:
+            - picked_point: The selected point as a numpy array.
+            - nearest_node_id: The unique ID of the node closest to the selected point.
+        """
+        fused_pcd = o3d.geometry.PointCloud()
+        for node_id in sorted(self.nodes):
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(self.nodes[node_id].points)
+            pcd.paint_uniform_color(self.nodes[node_id].color)
+            fused_pcd += pcd
+        vis = o3d.visualization.VisualizerWithEditing()
+        vis.create_window(window_name="Pick a point using [shift + left click] (undo: [shift + right click]), when finished press [Q]")
+        vis.add_geometry(fused_pcd)
+        vis.run()
+        vis.destroy_window()
+        picked_point = vis.get_picked_points()[0]
+        picked_point = np.array(fused_pcd.points)[picked_point]
+
+        return picked_point, self.ids[self.tree.query(picked_point)[1]]
+    
+    def get_tracker_offset(self, object_coordinates=False):
+        tracker_point, obj_id = self.query_object()
+        tracker_offset = tracker_point - self.nodes[obj_id].centroid
+        if object_coordinates:
+            tracker_offset = np.dot(self.nodes[obj_id].pose[:3, :3].T, tracker_offset)
+        return tracker_offset
 
     
-    def transform(self, idx, *args):
-        """ Transforms the node with the given index. Takes care of updating the connections."""
+    def transform(self, idx: int, *args) -> None:
+        """
+        Applies a transformation to the node with the specified index and updates its connections.
+
+        This method transforms the node identified by `idx` based on the provided transformation arguments.
+        After transforming the node, it ensures that the connections between the node and its neighbors 
+        are updated to reflect the change in position or orientation.
+
+        :param idx: The unique ID of the node to be transformed.
+        :param args: Variable arguments representing the transformation parameters (e.g., transformation, rotation, translation).
+        :return: None. The node is transformed, and connections are updated in place.
+        """
         # node is transformed
         self.nodes[idx].transform(*args)
         # all the nodes that this node is connected to might change their connection to a closer other node, hence the updating
@@ -417,26 +492,6 @@ class SceneGraph:
         self.update_connection(self.nodes[self.outgoing[idx]])
         # tree needs to be built again (TODO: optimize this)
         self.tree = KDTree(np.array([self.nodes[index].centroid for index in self.ids]))
-        
-
-    # def instance_segmentation(self):
-    #     """Still experimental. TODO: Enhance."""
-    #     for node in self.nodes.values():
-    #         print(self.label_mapping.get(node.sem_label, "ID not found"))
-    #         db = DBSCAN(eps=0.06, min_samples=250).fit(node.points)
-    #         labels = db.labels_
-
-    #         num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    #         print(f'Number of clusters: {num_clusters}')
-
-    #         colors = plt.get_cmap("tab20")(labels / (num_clusters if num_clusters > 0 else 1))
-    #         colors[labels == -1] = 0  # set noise points to black
-
-    #         clustered_pcd = o3d.geometry.PointCloud()
-    #         clustered_pcd.points = o3d.utility.Vector3dVector(node.points)
-    #         clustered_pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
-
-    #         o3d.visualization.draw_geometries([clustered_pcd])
     
     def color_with_ibm_palette(self):
         """ manual definition of the IBM palette including 10 colors """
@@ -444,507 +499,45 @@ class SceneGraph:
                 [0.99607843, 0.38039216, 0], [1., 0.69019608, 0.], [0.29803922, 0.68627451, 0.31372549], [0., 0.6, 0.8],
                 [0.70196078, 0.53333333, 1.], [0.89803922, 0.22352941, 0.20784314], [1., 0.25098039, 0.50588235]])
 
-        for idx, node in enumerate(self.nodes.values()):
+        random.seed(10)
+        for node in self.nodes.values():
             if node.movable:
                 node.color = colors[random.randint(0, len(colors)-1)]
-                # node.color = colors[idx]
-
-    def label_correction(self):
-        """ manual correction of the semantic labels for my end presentation. """
-
-        object_id_to_sem_label = {
-            18: 572,
-            16: 1163,
-            10: 1189,
-            3: 1276,
-            15: 8,
-            12: 1145,
-            6: 1276,
-            13: 15,
-            14: 168,
-            17: 87,
-            8: 8,
-            0: 749
-        }
-
-        for id, label in object_id_to_sem_label.items():
-            old_label = self.nodes[id].sem_label
-            self.nodes[id].sem_label = label
-            self.labels[old_label].remove(id)
-            self.labels.setdefault(label, []).append(id)
-            
-
-    def track_hand(self, scan_dir, left=True):
-        """Track the hand in the given scene. Returns, if posible a list of tuples containing the object id,
-        the pose of the camera, the position of the hand, and the offset between the hand and the object."""
-
-
-        ### Load the necessary files
-        vrs_files = glob.glob(os.path.join(scan_dir, '*.vrs'))
-        assert vrs_files is not None, "No vrs files found in directory"
-        vrs_file = vrs_files[0]
-        filename = os.path.splitext(os.path.basename(vrs_file))[0]
-
-        provider = data_provider.create_vrs_data_provider(vrs_file)
-        assert provider is not None, "Cannot open file"
-
-        camera_label = "camera-rgb"
-        stream_id = provider.get_stream_id_from_label(camera_label)
-
-        detection_files = glob.glob(os.path.join(scan_dir, '*.pickle'))
-        assert detection_files is not None, "No detection files found in directory"
-        detection_path = detection_files[0]
-        with open(detection_path, "rb") as f:
-            detection_results = pickle.load(f)
-        
-        wrist_and_palm_poses_path = scan_dir + "/mps_" + filename + "_vrs/hand_tracking/wrist_and_palm_poses.csv"
-        print(wrist_and_palm_poses_path)
-        wrist_and_palm_poses = mps.hand_tracking.read_wrist_and_palm_poses(wrist_and_palm_poses_path)
-
-        closed_loop_path = scan_dir + "/mps_" + filename + "_vrs/slam/closed_loop_trajectory.csv"
-        closed_loop_traj = mps.read_closed_loop_trajectory(closed_loop_path)
-
-        if len(detection_results) == 0 or len(wrist_and_palm_poses) == 0 or len(closed_loop_traj) == 0:
-            print(len(detection_results), len(wrist_and_palm_poses), len(closed_loop_traj))
-            print("One of the provided files (detections, hand poses, camera poses) is empty.")
-            return
-        
-        tracking = []
-        
-        hand_object, offset = None, None
-        object_detected = deque(maxlen=7)
-        object_positions = deque(maxlen=5)
-        average_speed = dict()
-        min_distance = 0.25
-        
-        # iterate through the frames
-        for index in range(provider.get_num_data(stream_id)):
-            name_curr = f"frame_{index:05}.jpg"
-            image_info = detection_results[name_curr]
-            hand_dets = image_info['hand_dets']
-            obj_dets = image_info['obj_dets']
-
-            query_timestamp = provider.get_image_data_by_index(stream_id, index)[1].capture_timestamp_ns
-
-            device_pose = get_nearest_pose(closed_loop_traj, query_timestamp)
-            wrist_and_palm_pose = get_nearest_wrist_and_palm_pose(wrist_and_palm_poses, query_timestamp)
-
-            # No pose found
-            if device_pose is None or wrist_and_palm_pose is None:
-                tracking += [None]
-                continue
-            
-            # Time difference between query timestamp and found pose timestamps is too large (> 0.1s)
-            if abs(device_pose.tracking_timestamp.total_seconds()*1e9 - query_timestamp) > 1e8 or \
-                abs(wrist_and_palm_pose.tracking_timestamp.total_seconds()*1e9 - query_timestamp) > 1e8:
-                tracking += [None]
-                continue
-
-            
-            # Pose of aria glasses in world coordinates
-            T_world_device = device_pose.transform_world_device.to_matrix()
-
-            # Get left or right hand pose, depending on passed argument
-            if left:
-                palm_position_device = wrist_and_palm_pose.left_hand.palm_position_device
-                if wrist_and_palm_pose.left_hand.confidence < 0.0:
-                    tracking += [(None, T_world_device, None, None)]
-                    object_detected.append(False)
-                    continue
-            else:
-                palm_position_device = wrist_and_palm_pose.right_hand.palm_position_device
-                if wrist_and_palm_pose.right_hand.confidence < 0.0:
-                    tracking += [(None, T_world_device, None, None)]
-                    object_detected.append(False)
-                    continue
-            
-            # Calculate the palm position in world coordinates
-            palm_position_world = np.dot(T_world_device, np.append(palm_position_device, 1))[:3]
-
-
-            object_positions.append(palm_position_world)
-            if len(object_positions) > 2:
-                displacements = [np.linalg.norm(object_positions[i+1] - object_positions[i]) for i in range(len(object_positions)-1)]
-                average_displacement = sum(displacements) / len(displacements)
-                average_speed[index] = average_displacement
-
-            # Hand-object-tracker found both, a hand and an object
-            if (obj_dets is not None) and (hand_dets is not None):
-                #  Confidence of the hand detection is too low
-                if not any(hand_dets[i, 4] > 0.7 and hand_dets[i, 5] == 3 for i in range(hand_dets.shape[0])) or \
-                    not any(obj_dets[i, 4] > 0.7 for i in range(obj_dets.shape[0])):
-                    object_detected.append(False)
-                else:
-                    # Get the nearest 4 objects to the palm position
-                    _, neighbor_indices = self.tree.query(palm_position_world, k=4)
-                    # print(neighbor_indices)
-                    # print(self.ids)
-                    neighbor_indices = [self.ids[n_idx] for n_idx in neighbor_indices if self.nodes[self.ids[n_idx]].movable]
-                    # print(neighbor_indices)
-                    
-                    # No object is close by
-                    if len(neighbor_indices)==0:
-                        object_detected.append(False)
-                    else:
-                        # Query the convex hull of the nearest neighbors to determine the actual nearest object
-                        nearest_neighbor = np.array([self.nodes[neighbor_idx].hull_tree.query(palm_position_world, k=1)[0] for neighbor_idx in neighbor_indices])                                
-                        # If the nearest neighbor is closer than 25cm, we assume that it was an actual object detection
-                        if np.min(nearest_neighbor) < 0.25 and hand_object is None:
-                            object_detected.append(True)
-                            
-                            # hand velocity has to be low enough to assume that the object was taken
-                            # TODO: overwrite previous object detections, if we are even closer than the previous iteration
-                            if average_speed.get(index, 1) < 0.015:
-                                hand_object = neighbor_indices[np.argmin(nearest_neighbor)]
-                                offset = self.nodes[hand_object].centroid - palm_position_world
-                                min_distance = np.min(nearest_neighbor)
-                                print("object %d was taken at frame %d" %(hand_object, index))
-                        elif np.min(nearest_neighbor) < min_distance:
-                            object_detected.append(True)
-                            tmp_object = neighbor_indices[np.argmin(nearest_neighbor)]
-                            if hand_object == tmp_object and index > 0:
-                                offset = self.nodes[hand_object].centroid - palm_position_world
-                                # remove the previous object detection, if the hand is now closer to the object
-                                tmp_tracking = tracking[index-1]
-                                min_distance = np.min(nearest_neighbor)
-                                tracking[index-1] = (None, tmp_tracking[1], tmp_tracking[2], None)
-                        elif hand_object is not None:
-                            object_detected.append(True)
-            else:
-                # we don't have an object detection, except if we have something in hand (hand_object is not None) and the average hand speed is high
-                # print(average_speed.get(index, 0), hand_object)
-                # if not (average_speed.get(index, 0) > 0.02 and hand_object is not None):
-                object_detected.append(False)
-
-            if not any(object_detected) and hand_object is not None:
-                ### clean up for noise in the hand-object-tracker, TODO: make this "more" online
-                # print("Before cleaning", index)
-                momentum_index = index
-                current = average_speed.get(momentum_index, 1)
-                print("object was let go at frame", momentum_index)
-                while current > 0.015 and momentum_index > 0:
-                    if tracking[momentum_index-1] is not None:
-                        _, tmp_pose, tmp_position, tmp_offset = tracking[momentum_index-1]
-                        tracking[momentum_index-1] = (None, tmp_pose, tmp_position, tmp_offset)
-                    momentum_index -= 1
-                    current = average_speed.get(momentum_index, 1)
-                hand_object = None
-                min_distance = 0.25
-                print("object was corrected to frame", momentum_index)
-            
-            if hand_object is None:
-                tracking += [(None, T_world_device, palm_position_world, None)]
-            else:
-                tracking += [(hand_object, T_world_device, palm_position_world, offset)]
-        
-        return tracking
-        
-    def merge_tracking(self, scan_dir):
-        """ Merges the results of the tracking of left and right hand into a common list. """
-        left = self.track_hand(scan_dir, left=True)
-        right = self.track_hand(scan_dir, left=False)
-
-        assert len(left) == len(right)
-
-        tracking = []
-        
-        for left_info, right_info in zip(left, right):
-            pose, left_id, left_pos, left_offset, right_id, right_pos, right_offset = None, None, None, None, None, None, None
-            if left_info is not None:
-                left_id, pose, left_pos, left_offset = left_info
-            if right_info is not None:
-                right_id, pose, right_pos, right_offset = right_info
-            tracking += [(pose, left_id, left_pos, left_offset, right_id, right_pos, right_offset)]
-        
-        return tracking
     
-    def track_changes(self, scan_dir):
-        tracking = self.merge_tracking(scan_dir)
+    def scene_geometries(self, centroids: bool = True, connections: bool = True) -> list[tuple]:
+        """
+        Retrieves all geometries in the scene graph, optionally including centroids and connections.
 
-        initial_left, initial_right = None, None
-        for (pose, left_id, left_pos, left_offset, right_id, right_pos, right_offset) in tracking:
-            if pose is None:
-                initial_left, initial_right = None, None
-                continue            
-            
-            # TODO: left_images = []
-            # there is a detection for the left hand
-            if left_id is not None:
-                left_correction = np.dot(pose[:3,:3], left_offset)
-                pose[:3, 3] = left_pos + left_correction
-                # object was not moved in previous iteration
-                if initial_left is None:
-                    # TODO: left_images += [current image]
-                    # TODO: get_mask for left_id in current image        
-                    inv = np.linalg.inv(pose)
-                    initial_left = inv
-                else:
-                    # TODO: stack images 
-                    # TODO: left_images += [current image]
-                    self.transform(left_id, np.dot(pose, initial_left))
-                    initial_left = np.linalg.inv(pose)
-            else:
-                # TODO: tracking finsihed
-                # TODO: do pose estimation with images and mask 
-                initial_left = None
-            
-            # there is a detection for the right hand and the same object hasn't been moved with the left hand
-            if right_id is not None and right_id != left_id:
-                right_correction = np.dot(pose[:3,:3], right_offset)
-                pose[:3, 3] = right_pos + right_correction
-                # object was not moved in previous iteration
-                if initial_right is None:
-                    inv = np.linalg.inv(pose)
-                    initial_right = inv
-                else:
-                    self.transform(right_id, np.dot(pose, initial_right))
-                    initial_right = np.linalg.inv(pose)
-            else:
-                initial_right = None
+        This method compiles a list of all geometries associated with nodes in the scene graph. 
+        Based on the provided arguments, it can include visual representations of the object centroids 
+        and the connections between them. The geometries are returned as a list of tuples, where each 
+        tuple contains the geometry data and metadata for rendering.
 
-
-    def tracking_video(self, scan_dir, output_path="output.mp4", fps=30, scale=0.0, labels=False, fpv=False):
-        """ create a video of the tracking process from the given scan directory. It does NOT
-        modify the scene graph, but only visualizes the tracking process. To accomodate the tracking,
-        use the 'track_changes' method. The fpv option offers a first-person view of the scene without actually
-        tracking the changes. """
-
-        def get_look_at_parameters(extrinsics):
-            """ transfer the extrinsics matrix to compatible parameters for the Open3D rendering camera"""
-            R = extrinsics[:3, :3]
-            t = extrinsics[:3, 3]
-            
-            eye = t
-            
-            camera_direction = np.array([0, 0, 1])
-            center = R @ camera_direction + t
-            
-            camera_up = np.array([-1, 0, 0])
-            up = R @ camera_up
-            
-            return center, eye, up
-
-        # get the tracking results
-        tracking = self.merge_tracking(scan_dir)
-        
+        :param centroids: Boolean flag indicating whether to include centroids of objects in the output. Defaults to True.
+        :param connections: Boolean flag indicating whether to include connections between nodes in the output. Defaults to True.
+        :return: List of tuples, each representing a geometry in the scene graph along with associated visualization data.
+        """
         geometries = []
-        for node in self.nodes.values():
-            pcd = o3d.geometry.PointCloud()
-            pcd_points = node.points + scale * node.centroid
-            pcd.points = o3d.utility.Vector3dVector(pcd_points)
-            pcd_color = np.array(node.color, dtype=np.float64)
-            pcd.paint_uniform_color(pcd_color)
-            geometries.append((pcd, "node_" + str(node.object_id)))
-        
-
-        material = rendering.MaterialRecord()
-        material.shader = "defaultLit"
-
-        if not fpv:
-            # Logic to capture the camera parameters for the resultsing video
-            gui.Application.instance.initialize()
-            window = gui.Application.instance.create_window("Press <S> to save the pose", 1408, 1408)
-            scene = gui.SceneWidget()
-            scene.scene = rendering.Open3DScene(window.renderer)
-            scene.scene.set_background(np.array([255.0, 255.0, 255.0, 1.0], dtype=np.float32))
-            intrinsics = np.array([
-                [611.428, 0, 703.5],
-                [0, 611.428, 703.5],
-                [0, 0, 1]
-            ])
-            scene.scene.camera.set_projection(intrinsics, 1, 5, 1408, 1408)
-            scene.scene.camera.look_at(np.array([0, 0, 0]), [0, 3, 0], [0, 1, 0])
-            window.add_child(scene)
-            
-            for geometry, name in geometries:
-                scene.scene.add_geometry(name, geometry, material)
-
-            if labels:
-                for node in self.nodes.values():
-                    label = self.label_mapping.get(node.sem_label, "ID not found")
-                    point = node.centroid + scale * node.centroid
-                    offset = np.array([0, 0, 0.1])
-                    scene.add_3d_label(point + offset, label)
-
-            camera_params = [None, None, None]
-            
-            # Set a key event callback to capture the screen
-            def on_key_event(event):
-                if event.type == gui.KeyEvent.Type.DOWN:
-                    if event.key == gui.KeyName.S:  # Capture screen when 'S' key is pressed
-                        model = scene.scene.camera.get_model_matrix()
-                        center = scene.scene.camera.unproject(704, 704, 0.5, 1408, 1408)
-                        up_direction = np.dot(model, np.array([0, 1, 0, 1]))[:3]
-                        eye = np.dot(model, np.array([0, 0, 0, 1]))[:3]
-                        camera_params[0] = up_direction
-                        camera_params[1] = eye
-                        camera_params[2] = center
-                        gui.Application.instance.quit()
-                        return True
-                return False
-
-            window.set_on_key(on_key_event)
-            
-            # Run the application
-            gui.Application.instance.run()
-            
-            if camera_params[0] is None:
-                print("camera parameters not set correctly")
-                return
-            
-            up = camera_params[0]
-            eye = camera_params[1]
-            center = camera_params[2]
-        else:
-            T_world_device = np.eye(4)
-            ## get first pose from video
-            for pose, left_id, left_pos, left_offset, right_id, right_pos, right_offset in tracking:
-                if pose is not None:
-                    T_world_device = pose
-                    break
-            ### Aria specific camera parameters, TODO: make these two variables generic?
-            T_device_camera = np.array([
-                [0.99205683, -0.05140061, 0.11480955, -0.00404916],
-                [0.11182453, 0.77834746, -0.61779488, -0.01218969],
-                [-0.05760668, 0.62572615, 0.77791276, -0.0051337],
-                [0, 0, 0, 1]
-            ])
-            intrinsics = np.array([
-                [611.428, 0, 703.5],
-                [0, 611.428, 703.5],
-                [0, 0, 1]
-            ])
-            extrinsics = np.dot(T_world_device, T_device_camera)
-            center, eye, up = get_look_at_parameters(extrinsics)
-        
-        #### image creation:
-        render = o3d.visualization.rendering.OffscreenRenderer(1408, 1408)
-        render.scene.set_background(np.array([255.0, 255.0, 255.0, 1.0], dtype=np.float32))
-
-        # create initial scene with the geometries
-        for geometry, name in geometries:
-            render.scene.add_geometry(name, geometry, material)
-
-        render.scene.camera.look_at(center, eye, up)
-        
-        last_img = render.render_to_image()
-
-        images = []
-
-        initial_left, initial_right = None, None
-
-        for idx, (pose, left_id, left_pos, left_offset, right_id, right_pos, right_offset) in enumerate(tracking):       
-            # for non-fpv view, we generate the images with the hand positions
-            if not fpv:
-                render.scene.remove_geometry("left"+str(idx-10))
-                render.scene.remove_geometry("right"+str(idx-10))
-                
-                if left_pos is not None or right_pos is not None:
-                    if left_pos is not None:
-                        lefty = o3d.geometry.TriangleMesh.create_sphere(radius=0.025)
-                        lefty.translate(left_pos)
-                        if left_id is None: lefty.paint_uniform_color([0.89803922, 0.22352941, 0.20784314])
-                        else: lefty.paint_uniform_color([0.29803922, 0.68627451, 0.31372549])
-                        lefty.compute_vertex_normals()
-                        render.scene.add_geometry("left"+str(idx), lefty, material)
-                    if right_pos is not None:
-                        righty = o3d.geometry.TriangleMesh.create_sphere(radius=0.025)
-                        righty.translate(right_pos)
-                        if right_id is None: righty.paint_uniform_color([0.47058824, 0.36862745, 0.94117647])
-                        else: righty.paint_uniform_color([0.99607843, 0.38039216, 0])
-                        righty.compute_vertex_normals()
-                        render.scene.add_geometry("right"+str(idx), righty, material)
-                    if pose is None:
-                        last_img = render.render_to_image()
-
-            if pose is None:
-                images += [np.asarray(last_img)]
-                initial_left, initial_right = None, None
-                continue
-
-            if not fpv:
-                # change the scene according to tracking results
-                # there is a detection for the left hand
-                if left_id is not None:
-                    left_correction = np.dot(pose[:3,:3], left_offset)
-                    pose[:3, 3] = left_pos + left_correction
-                    if initial_left is None:           
-                        inv = np.linalg.inv(pose)
-                        initial_left = inv
-                    else:
-                        current_pose = render.scene.get_geometry_transform("node_" + str(self.nodes[left_id].object_id))
-                        current_pose = np.dot(pose, np.dot(initial_left, current_pose)) # transform
-                        render.scene.set_geometry_transform("node_" + str(self.nodes[left_id].object_id), current_pose)
-                        initial_left = np.linalg.inv(pose)
-                else:
-                    initial_left = None
-                
-                # there is a detection for the right hand and the same object hasn't been moved with the left hand
-                if right_id is not None and right_id != left_id:
-                    right_correction = np.dot(pose[:3,:3], right_offset)
-                    pose[:3, 3] = right_pos + right_correction
-                    if initial_right is None:
-                        inv = np.linalg.inv(pose)
-                        initial_right = inv
-                    else:
-                        current_pose = render.scene.get_geometry_transform("node_" + str(self.nodes[right_id].object_id))
-                        current_pose = np.dot(pose, np.dot(initial_right, current_pose))
-                        render.scene.set_geometry_transform("node_" + str(self.nodes[right_id].object_id), current_pose)
-                        initial_right = np.linalg.inv(pose)
-                else:
-                    initial_right = None
-            
-            # in first-person view, we need to update to our current view each iteration
-            if fpv:
-                extrinsics = np.dot(pose, T_device_camera)
-                center, eye, up = get_look_at_parameters(extrinsics)
-                render.scene.camera.look_at(center, eye, up)
-            
-            
-            last_img = render.render_to_image()
-            images += [np.asarray(last_img)]
-        
-        # create video from images
-        with imageio.get_writer(output_path, fps=fps) as writer:
-            for image_file in tqdm(images):
-                writer.append_data(image_file)
-
-        render.scene.clear_geometry()
-    
-    def visualize(self, centroids=True, connections=True, scale=0.0, labels=False, optional_geometry=None):
-        """ Visualizes the scene graph in its current state, different visualization options can be set. """
-        
-        # add the geometries to the scene
-        geometries = []
-
         material = rendering.MaterialRecord()
         material.shader = "defaultLit"
 
         line_mat = rendering.MaterialRecord()
         line_mat.shader = "unlitLine"
-        line_mat.line_width = 2
-
+        line_mat.line_width = 5
+        
         for node in self.nodes.values():
-            pcd = o3d.geometry.PointCloud()
-            pcd_points = node.points + scale * node.centroid
-            if isinstance(node, DrawerNode) and node.box is not None:
-                geometries.append((node.box, "bbox_" + str(node.object_id), line_mat))
-            if isinstance(node, LightSwitchNode) and len(node.lamps) > 0:
-                for lamp in node.lamps:
-                    line_set = o3d.geometry.LineSet(
-                        points=o3d.utility.Vector3dVector([node.centroid + scale * node.centroid, self.nodes[lamp].centroid + scale * self.nodes[lamp].centroid]),
-                        lines=o3d.utility.Vector2iVector([[0, 1]])
-                    )
-                    line_set.paint_uniform_color([1, 0, 0])
-                    geometries.append((line_set, "lamp_connection_" + str(node.object_id), line_mat))
-            pcd.points = o3d.utility.Vector3dVector(pcd_points)
-            pcd_color = np.array(node.color, dtype=np.float64)
-            pcd.paint_uniform_color(pcd_color)
-            geometries.append((pcd, "node_" + str(node.object_id), material))
-
+            if node.visible:
+                pcd = o3d.geometry.PointCloud()
+                pcd.points = o3d.utility.Vector3dVector(node.points)
+                pcd_color = np.array(node.color, dtype=np.float64)
+                pcd.paint_uniform_color(pcd_color)
+                geometries.append((pcd, "node_" + str(node.object_id), material))
+                if isinstance(node, DrawerNode) and node.box is not None:
+                    geometries.append((node.box, "box_" + str(node.object_id), line_mat))
+        
         if centroids:
             centroid_pcd = o3d.geometry.PointCloud()
-            centroids_xyz = np.array([node.centroid + scale * node.centroid for node in self.nodes.values()])
+            centroids_xyz = np.array([node.centroid for node in self.nodes.values()])
             centroids_colors = np.array([node.color for node in self.nodes.values()], dtype=np.float64) / 255.0
             centroid_pcd.points = o3d.utility.Vector3dVector(centroids_xyz)
             centroid_pcd.colors = o3d.utility.Vector3dVector(centroids_colors)
@@ -954,10 +547,9 @@ class SceneGraph:
             line_points = []
             line_indices = []
             idx = 0
-            # TODO: this logic needs to be rebuild
             for start, end in self.outgoing.items():
-                line_points.append(self.nodes[start].centroid + scale * self.nodes[start].centroid)
-                line_points.append(self.nodes[end].centroid + scale * self.nodes[end].centroid)
+                line_points.append(self.nodes[start].centroid)
+                line_points.append(self.nodes[end].centroid)
                 line_indices.append([idx, idx + 1])
                 idx += 2
             if line_points:
@@ -967,13 +559,158 @@ class SceneGraph:
                 )
                 line_set.paint_uniform_color([0, 0, 0])
                 geometries.append((line_set, "connections", line_mat))
+            drawer_points = []
+            drawer_indices = []
+            idx = 0
+            for node in self.nodes.values():
+                if isinstance(node, DrawerNode) and node.belongs_to is not None:
+                    drawer_points.append(node.centroid)
+                    drawer_points.append(self.nodes[node.belongs_to].centroid)
+                    drawer_indices.append([idx, idx + 1])
+                    idx += 2
+            if drawer_points:
+                drawer_set = o3d.geometry.LineSet(
+                    points=o3d.utility.Vector3dVector(drawer_points),
+                    lines=o3d.utility.Vector2iVector(drawer_indices)
+                )
+                drawer_set.paint_uniform_color([0.5, 0.5, 0.5])
+                geometries.append((drawer_set, "drawer_connections", line_mat))
+        
+        return geometries
+    
+    
+    def set_camera(self, size, intrinsics) -> tuple[o3d.camera.PinholeCameraIntrinsic, np.ndarray] | None:
+        """
+        Opens an interactive Open3D window to set the desired camera view for the scene graph.
 
-        if optional_geometry and scale == 0.0:
-            if isinstance(optional_geometry, list):
-                for i, geom in enumerate(optional_geometry):
-                    geometries.append((geom, f"optional_geometry_{i}", material))
-            else:
-                geometries.append((optional_geometry, "optional_geometry", material))
+        This method generates the scene graph geometries and opens an Open3D visualization window, allowing 
+        the user to navigate and set the preferred camera view. By pressing 's', the function captures 
+        the current view's extrinsic and intrinsic camera parameters and returns them as a tuple. 
+        If 's' is not pressed, the function exits without returning parameters.
+
+        :return: 
+            - Tuple containing:
+                - extrinsics: A numpy array representing the extrinsic parameters of the camera view.
+                - intrinsics: A numpy array representing the intrinsic parameters of the camera view.
+            - None
+        """
+        geometries = self.scene_geometries()
+
+        gui.Application.instance.initialize()
+
+        window = gui.Application.instance.create_window("Press <S> to save the pose", 600, int(600*size[1]/size[0]))
+        scene = gui.SceneWidget()
+        scene.scene = rendering.Open3DScene(window.renderer)
+        scene.scene.set_view_size(size[0], size[1])
+        scene.scene.set_background(np.array([255.0, 255.0, 255.0, 1.0], dtype=np.float32))
+        scene.scene.camera.set_projection(intrinsics, 1, 5, size[0], size[1])
+        scene.scene.camera.look_at(np.array([0, 0, 0]), [0, 3, 0], [0, 1, 0])
+        window.add_child(scene)
+        
+        for geometry, name, material in geometries:
+            scene.scene.add_geometry(name, geometry, material)
+
+        camera_params = [None, None]
+        
+        # Set a key event callback to capture the screen
+        def on_key_event(event):
+            if event.type == gui.KeyEvent.Type.DOWN:
+                if event.key == gui.KeyName.S:  # Capture screen when 'S' key is pressed
+                    model_matrix = np.array(scene.scene.camera.get_model_matrix())
+                    intrinsics_cam = o3d.camera.PinholeCameraIntrinsic(size[0], size[1], intrinsics[0][0], intrinsics[1][1], intrinsics[0][2], intrinsics[1][2])
+                    extrinsics = np.linalg.inv(model_matrix)
+                    extrinsics[1] = -extrinsics[1]
+                    extrinsics[2] = -extrinsics[2]
+                    camera_params[0] = intrinsics_cam
+                    camera_params[1] = extrinsics
+                    gui.Application.instance.quit()
+                    return True
+            return False
+
+        window.set_on_key(on_key_event)
+        
+        # Run the application
+        gui.Application.instance.run()
+        
+        if camera_params[0] is None:
+            print("camera parameters not set correctly")
+            return None
+        else:
+            return camera_params
+
+    def headpose_track(
+            self,
+            scan_dir: str,
+            video_path: Optional[str] = None,
+            force_object_detection: bool = False,
+            save_pose: bool = False,
+            tracker_offset: Optional[np.ndarray] = None,
+            use_hand: bool = True
+        ) -> None:
+        """ Employs same strategy as track method but with headpose heuristic for the object rotation instead of point tracking.
+        Served as a baseline in the experiments. Less accurate but more robust to non-rigid objects. Consider this if your applications
+        involve non-rigid objects.
+
+        :param scene_graph: The scene graph containing object and spatial information.
+        :param scan_dir: Directory containing scan data and where results will be saved.
+        :param video_path: Path where tracking visualization video will be saved.
+        :param force_object_detection: Whether to force object detection in each frame.
+        :param save_pose: Whether to save tracked poses to disk.
+        :param tracker_offset: Optional offset to apply to tracked poses.
+        :param use_hand: Whether to use hand positions for pose estimation.
+        :return: None   
+        """  
+        from .tracking import headpose_track        
+        headpose_track(self, scan_dir, video_path, force_object_detection, save_pose, tracker_offset, use_hand)
+
+
+    def track(
+        self,
+        scan_dir: str,
+        video_path: Optional[str] = None,
+        force_object_detection: bool = False,
+        save_pose: bool = False,
+        tracker_offset: Optional[np.ndarray] = None,
+        use_hand: bool = True
+    ) -> None:
+        """
+        Executes the tracking process for objects within the scene.
+
+        This method iterates over incoming observations from the `aria_data` iterator,
+        processes each observation to update object poses based on hand detections and
+        object detections, and manages the rendering and saving of tracking data.
+
+        The tracking process involves:
+            - Updating the context window with new observations.
+            - Checking for hand-object detections and updating object associations.
+            - Processing left and right hands to manage tracked objects.
+            - Saving poses and timestamps if enabled.
+            - Rendering tracking states to images if video rendering is enabled.
+
+        :param scene_graph: The scene graph containing object and spatial information.
+        :param scan_dir: Directory containing scan data and where results will be saved.
+        :param video_path: Path where tracking visualization video will be saved.
+        :param force_object_detection: Whether to force object detection in each frame.
+        :param save_pose: Whether to save tracked poses to disk.
+        :param tracker_offset: Optional offset to apply to tracked poses.
+        :param use_hand: Whether to use hand positions for pose estimation.
+        :return: None
+        """
+        from .tracking import track
+        track(self, scan_dir, video_path, force_object_detection, save_pose, tracker_offset, use_hand)
+    
+    def visualize(self, centroids: bool = True, connections: bool = True, labels: bool = False) -> None:
+        """
+        Visualizes the scene graph in its current state, with customizable visualization options.
+
+        :param centroids: Boolean flag to display centroids of objects in the scene. Defaults to True.
+        :param connections: Boolean flag to display connections between nodes in the scene graph. Defaults to True.
+        :param labels: Boolean flag to display labels for each node in the scene. Defaults to False.
+        :return: None. The scene graph is visualized in an Open3D window.
+        """
+        
+        # add the geometries to the scene
+        geometries = self.scene_geometries(centroids, connections)
 
         gui.Application.instance.initialize()
         window = gui.Application.instance.create_window("Press <S> to capture a screenshot or <ESC> to quit the application.", 1024, 1024)
@@ -991,28 +728,12 @@ class SceneGraph:
                 bounds += geometry.get_axis_aligned_bounding_box()
             scene.setup_camera(60, bounds, bounds.get_center())
 
-
-
         if labels:
+            offset = np.array([0, 0, 0.01])
             for node in self.nodes.values():
-
                 label = self.label_mapping.get(node.sem_label, "ID not found")
-
-                if not node.movable:
-                    label = ""
-
-                if hasattr(node, "state"):
-                    label += ":\n " + node.state
-
-                if hasattr(node, "button_count"):
-                    label += ":\n Button Count:" + str(node.button_count) + "\n Interaction:" + str(node.interaction)
-
-                point = node.centroid + scale * node.centroid
-                offset = np.array([0, 0, 0.01])
+                point = node.centroid
                 scene.add_3d_label(point + offset, label)
-
-                a = 2
-
         
         # Set a key event callback to capture the screen
         def on_key_event(event):
