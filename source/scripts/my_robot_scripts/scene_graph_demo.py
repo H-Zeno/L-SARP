@@ -39,7 +39,8 @@ from LostFound.src import (
 )
 
 # The drawer_integration is only in the Spotlight repo!!
-from scenegraph.drawer_integration import parse_txt
+from LostFound.src.utils import parse_txt
+from LostFound.src.scene_graph import get_scene_graph
 
 ########################################################
 
@@ -87,43 +88,6 @@ world_object_client = WorldObjectClientSingleton()
 
 light_switch_detection = LightSwitchDetection()
 light_switch_interaction = LightSwitchInteraction(frame_transformer, config)
-
-
-
-
-def get_scene_graph(SCAN_DIR: str, categories_to_remove: Optional[List[str]] = ["curtain", "door"], transform_to_spot_frame: bool = True) -> SceneGraph:
-    """
-    This function builds a semantic 3D scene graph based on the instance segmentated 3D point clouds by Mask3D
-    
-    Args:
-        SCAN_DIR (str): The directory of the prescan data (prescans, defined in config.yaml).
-        categories_to_remove (Optional[List[str]]): The object categories to remove from the scene graph, default is "curtain" and "door".
-        transform_to_spot_frame (bool): Whether to transform the scene graph to the coordinate system of the Spot robot.
-
-    Returns:
-        SceneGraph: The scene graph object.
-    """
-    # instantiate the label mapping for Mask3D object classes (would change if using different 3D instance segmentation model)
-    label_map = pd.read_csv(SCAN_DIR + '/mask3d_label_mapping.csv', usecols=['id', 'category'])
-    mask3d_label_mapping = pd.Series(label_map['category'].values, index=label_map['id']).to_dict()
-    preprocess_scan(SCAN_DIR, drawer_detection=True, light_switch_detection=True)
-    T_ipad = np.load(SCAN_DIR + "/aruco_pose.npy")
-    immovable=["armchair", "bookshelf", "end table", "shelf", "coffee table", "dresser"]
-    scene_graph = SceneGraph(label_mapping=mask3d_label_mapping, min_confidence=0.2, immovable=immovable, pose=T_ipad)
-    scene_graph.build(SCAN_DIR, drawers=False, light_switches=False)
-
-    # potentially remove a category
-    for category in categories_to_remove:
-        scene_graph.remove_category(category)
-
-    scene_graph.color_with_ibm_palette()
-    
-    if transform_to_spot_frame:
-        # to transform to Spot coordinate system:
-        T_spot = parse_txt(os.path.join(SCAN_DIR, "icp_tform_ground.txt"))
-        scene_graph.change_coordinate_system(T_spot)  # where T_spot is a 4x4 transformation matrix of the aruco marker in Spot coordinate system
-
-    return scene_graph
 
 
 class _Push_Light_Switch(ControlFunction):

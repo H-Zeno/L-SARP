@@ -224,6 +224,7 @@ def compute_affordance_VLM_llava(cropped_image, affordance_classes):
     torch.cuda.empty_cache()
 
     return affordance_key
+    
 def compute_affordance_VLM_test(model: str, affordance_classes: Dict[int, str], cropped_image: np.ndarray):
 
     if model=="GPT4":

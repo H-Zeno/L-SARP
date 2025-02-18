@@ -3,15 +3,17 @@
 # By default the config/user.yaml configuration file is used.
 
 # used for logging
-project_name: "L-SARP"
+project_name: 'L-SARP'
 
 # used for naming purposes
-note: "Language-based Scene Aware Robot Planner"
+note: 'Language-based Scene Aware Robot Planner'
+
+path_to_data: 'data/'
 
 robot_planner_settings:
-  active_scene: "APARTMENT_0" # needs to be in all caps, see misc/scenes_enum.py
-  task_instruction_mode: "offline_predefined_instruction" # possible modes: "online_live_instruction", "offline_predefined_instruction" 
-  path_to_scene_data: "data_scene/" # relative path to project_root_dir
+  active_scene: 'APARTMENT_0' # needs to be in all caps, see misc/scenes_enum.py
+  task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"
+  path_to_scene_data: 'data_scene/' # relative path to project_root_dir
 
 # We give the robot task, and then the robot needs to great a goal, subtasks, and plan its actions to achieve the goal
 
@@ -19,55 +21,54 @@ robot_parameters:
   verbose: False
 
 # device on which to train
-device: "cuda"
+device: 'cuda'
 
 pre_scanned_graphs:
   base_fiducial_id: 52
-  graph_frame_name_prefix: "filtered_fiducial_"
+  graph_frame_name_prefix: 'filtered_fiducial_'
   floor: -0.1
-  low_res: "02-02-25-semantic-corner"
-  high_res: "020225-semantic-corner"
-  masked: ""
-  draw_point_clouds: false  # Set to true to enable point cloud visualization in the alignment script
+  low_res: '2025_02_02a'
+  high_res: '2025_02_02a'
+  draw_point_clouds: false # Set to true to enable point cloud visualization in the alignment script
 
 # paths are relative from project_root_directory
 subpaths:
-  cache: "cache/"
+  cache: 'cache/'
 
-  logs: "data/logs/"
-  output: "output/"
-  resume_from: "path/to/weights"
-  data: "data/"
-  graphs: "data/graphs/"
-  prescans: "data/prescans"
-  autowalks: "data/autowalk"
-  point_clouds: "data/point_clouds"
-  aligned_point_clouds: "data/aligned_point_clouds"
-  masks: "data/masked"
+  logs: 'data/logs/'
+  output: 'output/'
+  resume_from: 'path/to/weights'
+  data: 'data/'
+  graphs: 'data/graphs/'
+  prescans: 'data/prescans'
+  autowalks: 'data/autowalk'
+  point_clouds: 'data/point_clouds'
+  aligned_point_clouds: 'data/aligned_point_clouds'
+  masks: 'data/masked'
   # environment
-  environment: ".environment.yaml"
-  spot_description: "spot_description"
-  tmp: "data/tmp"
-  openmask_features: "data/openmask_features"
+  environment: '.environment.yaml'
+  spot_description: 'spot_description'
+  tmp: 'data/tmp'
+  openmask_features: 'data/openmask_features'
 
 servers:
   graspnet:
-    ip: "127.0.0.1"
+    ip: '127.0.0.1'
     port: 5000
-    route: "graspnet/predict"
+    route: 'graspnet/predict'
   openmask:
-    ip: "127.0.0.1"
+    ip: '127.0.0.1'
     port: 5001
-    route: "openmask/save_and_predict"
+    route: 'openmask/save_and_predict'
   vitpose:
-    ip: "127.0.0.1"
+    ip: '127.0.0.1'
     port: 5002
-    route: "vitpose/predict"
+    route: 'vitpose/predict'
   darknet:
-    ip: "127.0.0.1"
+    ip: '127.0.0.1'
     port: 5003
-    route: "darknet/predict"
+    route: 'darknet/predict'
   yolodrawer:
-    ip: "127.0.0.1"
+    ip: '127.0.0.1'
     port: 5004
-    route: "yolodrawer/predict"
+    route: 'yolodrawer/predict'

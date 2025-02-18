@@ -108,6 +108,7 @@ async def main():
         function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
     )
     
+    # Instantiate the Robot Planner
     try:
         robot_planner = RobotPlanner(
             task_execution_service=OpenAIChatCompletion(
