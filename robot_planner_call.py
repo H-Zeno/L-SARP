@@ -15,9 +15,9 @@ from semantic_kernel.contents.function_call_content import FunctionCallContent
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.functions import KernelArguments
 
-from configs.scenes_and_plugins_config import Scene
-
 from source.utils.logging_utils import setup_logging
+from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
+from configs.scenes_and_plugins_config import Scene
 from planner_core.robot_planner import RobotPlanner
 from configs.plugin_configs import plugin_configs
 #endregion
@@ -47,11 +47,13 @@ async def main():
 
     #region Robot Planner
     robot_planner = RobotPlanner(scene=active_scene)
-    robot_planner.add_plugins_to_kernel()
+    robot_planner.setup_services()
+    robot_planner.add_plugins()
     robot_planner.initialize_task_generation_agent()
     robot_planner.initialize_task_execution_agent()
     robot_planner.initialize_goal_completion_checker_agent()
 
+    robot_planner_group_chat =robot_planner.setup_agent_group_chat([robot_planner.task_generation_agent, robot_planner.task_execution_agent, robot_planner.goal_completion_checker_agent])
 
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -106,18 +108,8 @@ async def main():
             logger_main.info(goal_text)
 
             try:
-                response, history = await robot_planner.invoke_robot_on_task(goal_text)
-
-                logger_main.info(response)
-                logger_plugins.info(response)
-                logger_plugins.info("---")
-                logger_plugins.info(history)
+                response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, goal_text)
                 
-                # function_calls = [item for item in response.items if isinstance(item, FunctionCallContent)]
-
-                # print("---")
-                # print(f"Function Calls: {function_calls}")
-                # print("---")
                 responses[nr] = {
                     "goal": goal_text,
                     "response": response,
