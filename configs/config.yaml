@@ -11,7 +11,7 @@ note: 'Language-based Scene Aware Robot Planner'
 path_to_data: 'data/'
 
 robot_planner_settings:
-  active_scene: 'APARTMENT_0' # needs to be in all caps, see misc/scenes_enum.py
+  active_scene: 'APARTMENT_0' # needs to be in all caps, see misc/scenes_and_plugins_config.py
   task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"
   path_to_scene_data: 'data_scene/' # relative path to project_root_dir
 

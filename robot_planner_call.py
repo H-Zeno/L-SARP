@@ -15,17 +15,15 @@ from semantic_kernel.contents.function_call_content import FunctionCallContent
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.functions import KernelArguments
 
+from configs.scenes_and_plugins_config import Scene
+
+from source.utils.logging_utils import setup_logging
 from planner_core.robot_planner import RobotPlanner
-from planner_core.config_handler import ConfigHandler
-from planner_core.model_factories import OpenAiChatModelFactory, OpenAiModelFactory
-from configs.scenes_enum import Scene
-from plugins.plugins_factory import PluginsFactory
+from configs.plugin_configs import plugin_configs
 #endregion
 
-#region Logging Setup
-logging.config.fileConfig("configs/logging_conf.ini")
-logger_plugins = logging.getLogger("plugins")
-logger_main = logging.getLogger("main")
+#region Loading Loggers
+logger_plugins, logger_main = setup_logging()
 #endregion
 
 #region Config Loading
@@ -34,14 +32,8 @@ with open("configs/config.yaml", "r") as f:
 #endregion
 
 async def main():
-    #region Initializing Plugins
-    plugins_dotenv = Path(".env_plugins")
-    config_handler = ConfigHandler(plugins_dotenv)
-    chat_model_factory = OpenAiChatModelFactory(config_handler)
-    model_factory = OpenAiModelFactory(config_handler) # These model factories are used for the plugins (capabilities) of our robot
-    #endregion Initializing Plugins
-
-    #region Scene and Plugin Setup
+  
+    # region Scene Setup
     active_scene_name = config["robot_planner_settings"]["active_scene"]
     active_scene = Scene[active_scene_name]
     if active_scene not in Scene:
@@ -51,87 +43,16 @@ async def main():
     path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
     if not path_to_scene_data.exists():
         raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
-
-    plugins_factory = PluginsFactory(model_factory, chat_model_factory)
-    plugin_configs = {
-        "nav": (
-            plugins_factory.get_nav_plugin,
-            [
-                path_to_scene_data / Path(f"{active_scene.value}/nav_data/navmesh.txt"),
-                None  # nav_vis_path is None
-            ],
-            "navigation"
-        ),
-        "text": (
-            plugins_factory.get_text_plugin,
-            [
-                path_to_scene_data / Path(f"{active_scene.value}/text_data"),
-                Path(f".TEXT_DIR/{active_scene.value}")
-            ],
-            "text"
-        ),
-        "sql": (
-            plugins_factory.get_sql_plugin,
-            [
-                path_to_scene_data / Path(f"{active_scene.value}/sql_data/sql_db_data.json"),
-                Path(f".SQL_DIR/{active_scene.value}")
-            ],
-            "sql"
-        ),
-        "image": (
-            plugins_factory.get_image_plugin,
-            [
-                path_to_scene_data / Path(f"{active_scene.value}/img_data"),
-                Path(f".IMAGE_DIR/{active_scene.value}")
-            ],
-            "image"
-        )
-    }
-    #endregion Scene and Plugin Setup
+    # endregion Scene Setup
 
     #region Robot Planner
-    settings = dotenv_values(".env_core_planner")
+    robot_planner = RobotPlanner(scene=active_scene)
+    robot_planner.add_plugins_to_kernel()
+    robot_planner.initialize_task_generation_agent()
+    robot_planner.initialize_task_execution_agent()
+    robot_planner.initialize_goal_completion_checker_agent()
 
-    task_execution_endpoint_settings = OpenAIChatPromptExecutionSettings(
-        service_id="task_executer",
-        max_tokens=int(settings.get("MAX_TOKENS")),
-        temperature=float(settings.get("TEMPERATURE")),
-        top_p=float(settings.get("TOP_P")),
-        function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
-    )
 
-    task_generation_endpoint_settings = OpenAIChatPromptExecutionSettings(
-        service_id="task_generator",
-        max_tokens=int(settings.get("MAX_TOKENS")),
-        temperature=float(settings.get("TEMPERATURE")),
-        top_p=float(settings.get("TOP_P")),
-        function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
-    )
-    
-    # Instantiate the Robot Planner
-    try:
-        robot_planner = RobotPlanner(
-            task_execution_service=OpenAIChatCompletion(
-                service_id="task_executer",
-                api_key=settings.get("API_KEY"),
-                org_id=settings.get("ORG_ID"),
-                ai_model_id=settings.get("AI_MODEL_ID")
-            ),
-            task_generation_service=OpenAIChatCompletion(
-                service_id="task_generator",
-                api_key=settings.get("API_KEY"),
-                org_id=settings.get("ORG_ID"),
-                ai_model_id=settings.get("AI_MODEL_ID")
-            ),
-            task_execution_endpoint_settings=task_execution_endpoint_settings,
-            task_generation_endpoint_settings=task_generation_endpoint_settings,
-            enabled_plugins=active_scene.plugins,
-            plugin_configs=plugin_configs
-        )
-        robot_planner.set_kernel()
-    except Exception as e:
-        logger_main.error(f"Failed to initialize robot planner: {str(e)}")
-        raise
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
         initial_prompt = f"""
@@ -183,7 +104,6 @@ async def main():
             logger_plugins.info(goal_text)
             logger_main.info(separator)
             logger_main.info(goal_text)
-
 
             try:
                 response, history = await robot_planner.invoke_robot_on_task(goal_text)

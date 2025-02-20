@@ -6,3 +6,6 @@
 	path = source/LostFound
 	url = git@github.com:H-Zeno/LostFound.git
 
+[submodule "OpenYOLO3D"]
+	path = OpenYOLO3D
+	url = https://github.com/aminebdj/OpenYOLO3D.git
