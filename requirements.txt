@@ -60,3 +60,11 @@ projectaria_tools>=1.5.4
 flow_vis
 tensorboard
 gdown
+python-dotenv>=1.0.0
+aiohttp~=3.8
+nest-asyncio~=1.6
+
+# Mask3D client requirements
+requests>=2.25.0
+numpy>=1.19.0
+open3d>=0.13.0

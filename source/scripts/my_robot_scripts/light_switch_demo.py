@@ -345,8 +345,12 @@ class _Push_Light_Switch(ControlFunction):
             # interaction based on affordance
             #################################
             switch_interaction_start_time = time.time()
-            offsets, switch_type = light_switch_interaction.determine_switch_offsets_and_type(affordance_dict, GRIPPER_HEIGHT, GRIPPER_WIDTH)
-            light_switch_interaction.switch_interaction(switch_type, refined_pose, offsets, frame_name, FORCES)
+            result = light_switch_interaction.determine_switch_offsets_and_type(affordance_dict, GRIPPER_HEIGHT, GRIPPER_WIDTH)
+            if result is not None:
+                offsets, switch_type = result
+                light_switch_interaction.switch_interaction(switch_type, refined_pose, offsets, frame_name, FORCES)
+            else:
+                logging.warning(f"Could not determine switch offsets and type for switch {idx+1}")
             stow_arm()
             logging.info(f"Interaction with switch {idx+1} of {len(poses)} finished")
 
