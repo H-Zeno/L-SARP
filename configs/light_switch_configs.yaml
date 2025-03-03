@@ -1,0 +1,37 @@
+# Robot Parameters
+STAND_DISTANCE: 0.9 # the distance to stand from the light switch
+GRIPPER_WIDTH: 0.03 # the width of the gripper
+GRIPPER_HEIGHT: 0.03 # the height of the gripper
+
+X_BODY: 1.4
+Y_BODY: 0.85
+ANGLE_BODY: 175
+
+# Light Switch Refinement Parameters
+NUM_REFINEMENT_POSES: 4
+NUM_REFINEMENTS_MAX_TRIES: 5
+BOUNDING_BOX_OPTIMIZATION: true
+REFINEMENT_X_OFFSET: -0.3 # -0.2
+
+# Light Switch Interaction Parameters
+SHUFFLE: false
+
+# Advanced Affordance Detection
+ADVANCED_AFFORDANCE: true
+FORCES: [8, 0, 0, 0, 0, 0]
+
+# Affordance Classes
+AFFORDANCE_CLASSES:
+  0: 'SINGLE PUSH'
+  1: 'DOUBLE PUSH'
+  2: 'ROTATING'
+  3: 'something else'
+
+# Affordance Dictionary for Light Switches
+AFFORDANCE_DICT_LIGHT_SWITCHES:
+  'button type': ['push button switch', 'rotating switch', 'none']
+  'button count': ['single', 'double', 'none']
+  'button position (wrt. other button!)':
+    ['buttons stacked vertically', 'buttons side-by-side', 'none']
+  'interaction inference from symbols':
+    ['top/bot push', 'left/right push', 'center push', 'no symbols present']
