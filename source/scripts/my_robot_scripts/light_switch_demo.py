@@ -47,26 +47,34 @@ from utils.pose_utils import calculate_light_switch_poses
 from utils.bounding_box_refinement import refine_bounding_box
 from random import uniform
 
-config = Config()
-API_KEY = config["gpt_api_key"]
-STAND_DISTANCE = 0.9 #1.0
-GRIPPER_WIDTH = 0.03
-GRIPPER_HEIGHT = 0.03
-ADVANCED_AFFORDANCE = True
-FORCES = [8, 0, 0, 0, 0, 0]
+# Load configuration
+config = Config("light_switch_configs")
+
+# Get workspace root for absolute paths
 WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 LOGGING_PATH = os.path.join(WORKSPACE_ROOT, "logging_lightswitch_experiments")
 
-AFFORDANCE_CLASSES = {0: "SINGLE PUSH",
-                          1: "DOUBLE PUSH",
-                          2: "ROTATING",
-                          3: "something else"}
+# Load configuration values
+STAND_DISTANCE = config["STAND_DISTANCE"]
+GRIPPER_WIDTH = config["GRIPPER_WIDTH"]
+GRIPPER_HEIGHT = config["GRIPPER_HEIGHT"]
 
-AFFORDANCE_DICT_LIGHT_SWITCHES = {"button type": ["push button switch", "rotating switch", "none"],
-                   "button count": ["single", "double", "none"],
-                   "button position (wrt. other button!)": ["buttons stacked vertically", "buttons side-by-side", "none"],
-                   "interaction inference from symbols": ["top/bot push", "left/right push", "center push", "no symbols present"]}
+X_BODY = config["X_BODY"]
+Y_BODY = config["Y_BODY"]
+ANGLE_BODY = config["ANGLE_BODY"]
 
+ADVANCED_AFFORDANCE = config["ADVANCED_AFFORDANCE"]
+FORCES = config["FORCES"]
+
+AFFORDANCE_CLASSES = config["AFFORDANCE_CLASSES"]
+AFFORDANCE_DICT_LIGHT_SWITCHES = config["AFFORDANCE_DICT_LIGHT_SWITCHES"]
+
+# Load refinement parameters
+NUM_REFINEMENT_POSES = config["NUM_REFINEMENT_POSES"]
+NUM_REFINEMENTS_MAX_TRIES = config["NUM_REFINEMENTS_MAX_TRIES"]
+BOUNDING_BOX_OPTIMIZATION = config["BOUNDING_BOX_OPTIMIZATION"]
+REFINEMENT_X_OFFSET = config["REFINEMENT_X_OFFSET"]
+SHUFFLE = config["SHUFFLE"]
 
 # =============================================================================
 # Global Singletons and Initializations
@@ -82,36 +90,14 @@ world_object_client = WorldObjectClientSingleton()
 light_switch_detection = LightSwitchDetection()
 light_switch_interaction = LightSwitchInteraction(frame_transformer, config)
 
-from utils.pose_utils import (
-    determine_handle_center,
-    find_plane_normal_pose,
-    calculate_handle_poses,
-    cluster_handle_poses,
-    filter_handle_poses,
-    refine_handle_position)
-# =============================================================================
-# Experiment Configuration
-# =============================================================================
-TEST_NUMBER = 8
-RUN = 1
-LEVEL = "upper"
-
 # Create logging directory if it doesn't exist
 os.makedirs(LOGGING_PATH, exist_ok=True)
 
-## TESTING PARAMETERS
-TEST_NUMBER = 8
-RUN =1
+# =============================================================================
+# Experiment Configuration
+# =============================================================================
 LEVEL = "upper"
-
-DETECTION_DISTANCE = 0.75
-X_BODY = 1.6
-Y_BODY = 0.6
-ANGLE_BODY = 180
-SHUFFLE = True
-NUM_REFINEMENT_POSES = 4
-NUM_REFINEMENTS_MAX_TRIES = 5
-BOUNDING_BOX_OPTIMIZATION = True
+RUN = 1
 
 if LEVEL == "upper":
     X_CABINET = 0.15
@@ -129,86 +115,16 @@ elif LEVEL == "both":
     X_BODY = 2.3
     Y_BODY = 0.6
 
-if TEST_NUMBER == 1:
-    # 1. STAND AT FIXED DISTANCE AND ANGLE, PUSH ALL SWITCHES IN RANDOMIZED ORDER
-    pass
-elif TEST_NUMBER == 2:
-    # 2. STAND AT FIXED DISTANCE AND VARIABLE ANGLE, PUSH ALL SWITCHES IN RANDOMIZED ORDER
-    angle = uniform(-22.5,22.5)
-    print(angle)
-    X_BODY = X_BODY * np.cos(np.deg2rad(angle))
-    Y_BODY = Y_BODY + X_BODY * np.sin(np.deg2rad(angle))
-elif TEST_NUMBER == 3:
-    # 3. STAND FURTHER AWAY AT FIXED DISTANCE AND VARIABLE ANGLE, PUSH ALL SWITCHES IN RANDOMIZED ORDER
-    X_BODY = 2.1
-    angle = uniform(-22.5, 22.5)
-    print(angle)
-    X_BODY = X_BODY * np.cos(np.deg2rad(angle))
-    Y_BODY = Y_BODY + X_BODY * np.sin(np.deg2rad(angle))
-    if LEVEL == "upper":
-        Z_CABINET = 0.6
-    elif LEVEL == "lower":
-        Z_CABINET = -0.1
-elif TEST_NUMBER == 4:
-    # 4. STAND AT FIXED DISTANCE AND ANGLE, SINGLE REFINEMENT POSE, PUSH ALL SWITCHES IN RANDOMIZED ORDER
-    NUM_REFINEMENT_POSES = 1
-    NUM_REFINEMENTS_MAX_TRIES = 1
-elif TEST_NUMBER == 5:
-    BOUNDING_BOX_OPTIMIZATION = False
-elif TEST_NUMBER == 6:
-    BOUNDING_BOX_OPTIMIZATION = False
-    angle = uniform(-22.5,22.5)
-    print(angle)
-    X_BODY = X_BODY * np.cos(np.deg2rad(angle))
-    Y_BODY = Y_BODY + X_BODY * np.sin(np.deg2rad(angle))
-elif TEST_NUMBER == 7:
-    NUM_REFINEMENT_POSES = 2
-    NUM_REFINEMENTS_MAX_TRIES = 1
-elif TEST_NUMBER == 8:
-    NUM_REFINEMENT_POSES = 4
-    NUM_REFINEMENTS_MAX_TRIES = 5
-    BOUNDING_BOX_OPTIMIZATION = True
-    SHUFFLE = False
-    DETECTION_DISTANCE = 0.75
-    X_BODY = 1.4
-    Y_BODY = 0.85
-    ANGLE_BODY = 175
-
 # =============================================================================
 # Logging Configuration
 WORKSPACE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../..")
 LOGGING_PATH = os.path.join(WORKSPACE_ROOT, "logging_lightswitch_experiments")
 os.makedirs(LOGGING_PATH, exist_ok=True)
-log_file_path = os.path.join(LOGGING_PATH, f"switches_experiment_{TEST_NUMBER}_LEVEL_{LEVEL}_RUN_{RUN}.log")
+log_file_path = os.path.join(LOGGING_PATH, f"switches_experiment_LEVEL_{LEVEL}_RUN_{RUN}.log")
 if os.path.exists(log_file_path):
     raise FileExistsError(f"The file '{log_file_path}' already exists.")
 logging.basicConfig(filename=log_file_path, filemode='w', format='%(name)s - %(levelname)s - %(message)s')
 logging.getLogger("understanding-spot.192.168.50.3").disabled = True
-
-logging.info(f"ANGLE_BODY: {ANGLE_BODY}")
-logging.info(f"X_BODY: {X_BODY}")
-logging.info(f"Y_BODY: {Y_BODY}")
-logging.info(f"X_CABINET: {X_CABINET}")
-logging.info(f"Y_CABINET: {Y_CABINET}")
-logging.info(f"Z_CABINET: {Z_CABINET}")
-logging.info(f"STAND_DISTANCE: {STAND_DISTANCE}")
-logging.info(f"GRIPPER_WIDTH: {GRIPPER_WIDTH}")
-logging.info(f"GRIPPER_HEIGHT: {GRIPPER_HEIGHT}")
-logging.info(f"ADVANCED_AFFORDANCE: {ADVANCED_AFFORDANCE}")
-logging.info(f"FORCES: {FORCES}")
-logging.info(f"LOGGING_PATH: {LOGGING_PATH}")
-logging.info(f"TEST_NUMBER: {TEST_NUMBER}")
-logging.info(f"RUN: {RUN}")
-logging.info(f"LEVEL: {LEVEL}")
-logging.info(f"DETECTION_DISTANCE: {DETECTION_DISTANCE}")
-logging.info(f"SHUFFLE: {SHUFFLE}")
-logging.info(f"NUM_REFINEMENT_POSES: {NUM_REFINEMENT_POSES}")
-logging.info(f"NUM_REFINEMENTS_MAX_TRIES: {NUM_REFINEMENTS_MAX_TRIES}")
-
-# Retrieve GPT API key from configuration
-config = Config()
-API_KEY = config["gpt_api_key"]
-
 
 class _Push_Light_Switch(ControlFunction):
     def __call__(
@@ -218,9 +134,6 @@ class _Push_Light_Switch(ControlFunction):
         *args,
         **kwargs,
     ) -> str:
-
-        if TEST_NUMBER == 2 or TEST_NUMBER == 3:
-            logging.info(f"angle: {angle}")
 
         logging.info(f"ANGLE_BODY: {ANGLE_BODY}")
         logging.info(f"X_BODY: {X_BODY}")
@@ -234,10 +147,9 @@ class _Push_Light_Switch(ControlFunction):
         logging.info(f"ADVANCED_AFFORDANCE: {ADVANCED_AFFORDANCE}")
         logging.info(f"FORCES: {FORCES}")
         logging.info(f"LOGGING_PATH: {LOGGING_PATH}")
-        logging.info(f"TEST_NUMBER: {TEST_NUMBER}")
         logging.info(f"RUN: {RUN}")
         logging.info(f"LEVEL: {LEVEL}")
-        logging.info(f"DETECTION_DISTANCE: {DETECTION_DISTANCE}")
+        # logging.info(f"DETECTION_DISTANCE: {DETECTION_DISTANCE}")
         logging.info(f"SHUFFLE: {SHUFFLE}")
         logging.info(f"NUM_REFINEMENT_POSES: {NUM_REFINEMENT_POSES}")
         logging.info(f"NUM_REFINEMENTS_MAX_TRIES: {NUM_REFINEMENTS_MAX_TRIES}")
@@ -271,6 +183,7 @@ class _Push_Light_Switch(ControlFunction):
 
         #################################
         # Gaze at the cabinet and get the depth and color images
+        # (The pose of the cabinet is necessary for the gaze at the cabinet)
         #################################
         set_gripper_camera_params('1920x1080')
         time.sleep(1)
