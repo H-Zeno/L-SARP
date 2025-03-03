@@ -22,9 +22,11 @@ from configs.agent_instruction_prompts import TASK_EXECUTION_AGENT_INSTRUCTIONS,
 from source.utils.logging_utils import setup_logging
 logger_plugins, logger_main = setup_logging()
 
+# Import the action plugins
+from source.robot_plugins.item_interactions import ItemInteractionsPlugin
+from source.robot_plugins.navigation import NavigationPlugin
 
 
-        
 
 class RobotPlanner:
     def __init__(
@@ -49,12 +51,13 @@ class RobotPlanner:
         # Load settings
         self._planner_settings = dotenv_values(".env_core_planner")
 
-        # Set plugin configurations
-        self._enabled_plugins = self.scene.plugins
-        self._plugin_configs = plugin_configs
+        # Set the configurations for the retrieval plugins
+        self._enabled_retrieval_plugins = self.scene.retrieval_plugins
+        self._retrieval_plugins_configs = plugin_configs
         
+        # Create the kernel and the robot state
+        self.kernel = Kernel()
         self.robot_state = RobotState()
-        
 
     def _load_config(self) -> dict:
         """
@@ -64,21 +67,25 @@ class RobotPlanner:
         with open(Path(self._planner_settings.get("PROJECT_DIR")) / 'configs' / 'config.yaml', 'r') as file:
             return yaml.safe_load(file)
 
-    def add_plugins(self) -> None:
+    def add_retrieval_plugins(self) -> None:
         """
         Adds all the enabled plugins to the kernel.
         Scenes_and_plugins_config.py contains the plugin configurations for each scene.
         """
-        # Addd our kernel Service
-        self.kernel = Kernel()
         
         # Add Enabled Plugins to the kernel
-        for plugin_name in self._enabled_plugins:
-            if plugin_name in self._plugin_configs:
-                factory_func, args, kernel_name = self._plugin_configs[plugin_name]
+        for plugin_name in self._enabled_retrieval_plugins:
+            if plugin_name in self._retrieval_plugins_configs:
+                factory_func, args, kernel_name = self._retrieval_plugins_configs[plugin_name]
                 plugin = factory_func(*args)
                 self.kernel.add_plugin(plugin, plugin_name=kernel_name)
 
+    def add_action_plugins(self) -> None:
+        """
+        Adds all the action plugins to the kernel
+        """
+        self.kernel.add_plugin(ItemInteractionsPlugin(), plugin_name="item_interactions")
+        self.kernel.add_plugin(NavigationPlugin(), plugin_name="navigation")
 
     def setup_services(self) -> None:
         """
@@ -132,7 +139,6 @@ class RobotPlanner:
             execution_settings=task_generation_endpoint_settings
         )
 
-
     def initialize_task_execution_agent(self) -> None:
         """
         Initializes the task execution agent.
@@ -181,72 +187,6 @@ class RobotPlanner:
             termination_strategy=ApprovalTerminationStrategy(agents=[self.goal_completion_checker_agent], maximum_iterations=10)
         )
         return self.application_question_answer_group_chat
-
-
-    async def invoke_task_generation_agent(self, goal: str, completed_tasks: list = None, env_state: str = None) -> Tuple:
-        """
-        Invokes the task generation agent to generate a list of tasks to complete based on the goal that is provided.
-        
-        Args:
-            goal (str): The main goal to accomplish
-            completed_tasks (list, optional): List of tasks already completed
-            env_state (str, optional): Current state of the environment
-        """
-        # Create structured user message following the template
-        task_generation_user_message = f"""
-Goal: {goal}
-
-Tasks Completed: 
-{chr(10).join([f"- {task}" for task in completed_tasks]) if completed_tasks else "No tasks completed yet"}
-
-Environment State:
-{env_state if env_state else "Initial state - no environment data available"}
-"""
-
-        # Create chat history for this interaction
-        self._goal_generator_history = ChatHistory()
-        self._goal_generator_history.add_user_message(task_generation_user_message)
-
-        # Invoke agent and get response
-        async for response in self._task_generation_agent.invoke(self._goal_generator_history):
-            return response.contents
-
-    async def invoke_robot_on_task(self, task: str) -> Tuple[str, str]:
-        """
-        The robot achieves the given task using automatic tool calling via an agent.
-
-        Args:
-            task (str): task to be executed
-
-        Returns:
-            Tuple[str, str]: final response and chat history
-        """
-        if self.kernel is None:
-            raise ValueError("You need to set the Semantic Kernel first")
-
-        try:
-            # Add task to chat history
-            self._task_executer_history = ChatHistory()
-            self._task_executer_history.add_user_message(task)
-
-            # Invoke agent and get response with function calls
-            async for response in self._task_execution_agent.invoke(self._task_executer_history):
-                # Store response in history
-                self._task_executer_history.add_assistant_message(response.content)
-                return response.content, self._task_executer_history
-
-        except Exception as e:
-            logger_main.error(f"Error during task execution: {str(e)}")
-            raise RuntimeError(f"Task execution failed: {str(e)}")
-
-    async def invoke_goal_completion_checker_agent(self, goal: str, completed_tasks: list = None, env_state: str = None) -> Tuple:
-        """
-        Invokes the goal completion checker agent to check if the goal has been completed.
-        The goal completion checker agent usually only gets activated 1 or 2 steps before the task generation agent plans the task to be completed.
-        """
-        pass
-
-    # Check out: get access/insight on the plan that was made (e.g. telemetry support)
 
 
 class ApprovalTerminationStrategy(TerminationStrategy):

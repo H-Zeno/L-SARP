@@ -23,10 +23,12 @@ from bosdyn.client.robot_command import (
     blocking_selfright,
     blocking_stand,
 )
+from bosdyn.client.image import ImageClient
+
 from bosdyn.client.robot_state import RobotStateClient
 from robot_utils.basic_movements import move_body
 from robot_utils.frame_transformer import FrameTransformerSingleton
-from utils import environment
+
 from utils.coordinates import Pose3D
 from utils.logger import LoggerSingleton, TimedFileLogger
 from utils.recursive_config import Config
@@ -39,6 +41,8 @@ from utils.singletons import (
     WorldObjectClientSingleton,
     reset_singletons,
 )
+
+from planner_core.robot_state import RobotState
 
 frame_transformer = FrameTransformerSingleton()
 graph_nav_client = GraphNavClientSingleton()
@@ -77,6 +81,7 @@ class ControlFunction(typing.Protocol):
 
 
 def take_control_with_function(
+    general_robot_state: RobotState,
     config: Config,
     function: ControlFunction,
     *args,
@@ -98,55 +103,18 @@ def take_control_with_function(
     :param kwargs: other keyword-args for ControlFunction
     """
 
-    global logger
-    logger.set_instance(TimedFileLogger(config))
-    logger.log("Robot started")
-
-    # Setup adapted from github.com/boston-dynamics/spot-sdk/blob/master/python/examples/hello_spot/hello_spot.py
-    spot_env_config = environment.get_environment_config(config, ["spot"])
-    robot_config = config["robot_parameters"]
-    sdk = bosdyn_client.create_standard_sdk("understanding-spot")
-
-    # setup logging
-    bosdyn_util.setup_logging(robot_config["verbose"])
-
-    # setup robot
-    global robot
-    robot.set_instance(sdk.create_robot(spot_env_config["wifi_default_address"]))
-    environment.set_robot_password(config)
-    bosdyn_util.authenticate(robot)
-
-    # Establish time sync with the robot. This kicks off a background thread to establish time sync.
-    # Time sync is required to issue commands to the robot. After starting time sync thread, block
-    # until sync is established.
-    robot.time_sync.wait_for_sync()
-
-    # Verify the robot is not estopped and that an external application has registered and holds
-    # an estop endpoint.
+    # Verify the estop
     verify_estop()
 
-    # The robot state client will allow us to get the robot's state information, and construct
-    # a command using frame information published by the robot.
-    global robot_state_client
-    robot_state_client.set_instance(
-        robot.ensure_client(RobotStateClient.default_service_name)
-    )
-    robot_state = robot_state_client.get_robot_state()
-    # robot.logger.info(str(robot_state))
+    # Load the robot state
+    robot_state_client = general_robot_state.robot_state_client
+    robot = general_robot_state.robot
+    image_client = general_robot_state.image_client
 
-    # Only one client at a time can operate a robot. Clients acquire a lease to
-    # indicate that they want to control a robot. Acquiring may fail if another
-    # client is currently controlling the robot. When the client is done
-    # controlling the robot, it should return the lease so other clients can
-    # control it. The LeaseKeepAlive object takes care of acquiring and returning
-    # the lease for us.
+    robot_state = robot_state_client.get_robot_state()
     lease_client = robot.ensure_client(
         bosdyn_client.lease.LeaseClient.default_service_name
     )
-
-    ##################################################################################
-    ################################## END OF SETUP ##################################
-    ##################################################################################
 
     with bosdyn_client.lease.LeaseKeepAlive(
         lease_client, must_acquire=True, return_at_exit=True
@@ -203,6 +171,7 @@ def take_control_with_function(
             # robot.logger.info("Robot standing.")
             time.sleep(3)
 
+        # Execute the specific control function
         return_values = function(
             config,
             sdk,

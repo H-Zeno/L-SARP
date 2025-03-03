@@ -20,6 +20,9 @@ from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
 from configs.scenes_and_plugins_config import Scene
 from planner_core.robot_planner import RobotPlanner
 from configs.plugin_configs import plugin_configs
+
+from LostFound.src.scene_graph import get_scene_graph
+
 #endregion
 
 #region Loading Loggers
@@ -45,10 +48,16 @@ async def main():
         raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
     # endregion Scene Setup
 
+    # region Load the Scene Graph
+    scene_graph = get_scene_graph(path_to_scene_data)
+    scene_graph.visualize(labels=True, connections=True, centroids=True)
+    # endregion Load the Scene Graph
+
     #region Robot Planner
     robot_planner = RobotPlanner(scene=active_scene)
     robot_planner.setup_services()
-    robot_planner.add_plugins()
+    robot_planner.add_retrieval_plugins()
+    robot_planner.add_action_plugins()
     robot_planner.initialize_task_generation_agent()
     robot_planner.initialize_task_execution_agent()
     robot_planner.initialize_goal_completion_checker_agent()

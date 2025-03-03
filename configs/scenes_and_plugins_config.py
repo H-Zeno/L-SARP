@@ -3,17 +3,17 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 
-DEFAULT_PLUGINS = ["nav", "text", "sql", "image"]
+DEFAULT_RETRIEVAL_PLUGINS = ["nav", "text", "sql", "image"]
 
 
 @dataclass
 class SceneConfig:
     name: str
-    plugins: Optional[List[str]] = None
+    retrieval_plugins: Optional[List[str]] = None
 
     def __post_init__(self):
-        if self.plugins is None:
-            self.plugins = DEFAULT_PLUGINS
+        if self.retrieval_plugins is None:
+            self.retrieval_plugins = DEFAULT_RETRIEVAL_PLUGINS
 
 
 class Scene(Enum):
@@ -37,6 +37,6 @@ class Scene(Enum):
         return self._value_.name
 
     @property 
-    def plugins(self) -> List[str]:
-        return self._value_.plugins
+    def retrieval_plugins(self) -> List[str]:
+        return self._value_.retrieval_plugins
 

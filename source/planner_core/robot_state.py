@@ -15,10 +15,26 @@ from pathlib import Path
 import os
 from dotenv import dotenv_values
 
+# Utils
+from utils.logger import TimedFileLogger
+from utils.recursive_config import Config
+from utils import environment
+
 # Import Spot SDK
-import bosdyn.client
-import bosdyn.client.util
+from bosdyn import client as bosdyn_client
+from bosdyn.api import estop_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
+from bosdyn.client import Sdk
+from bosdyn.client import util as bosdyn_util
+from bosdyn.client.estop import EstopClient
+from bosdyn.client.robot_command import (
+    RobotCommandClient,
+    blocking_selfright,
+    blocking_stand,
+)
+from bosdyn.client.image import ImageClient
 from bosdyn.client.robot import Robot
+from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.image import ImageClient
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.frame_helpers import VISION_FRAME_NAME, BODY_FRAME_NAME, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b
@@ -88,25 +104,52 @@ class RobotState:
             print(f"Error loading Spot configuration: {e}")
             self.spot_config = {}
     
-    def connect_to_spot(self) -> None:
+    def connect_to_spot(self, config: Config) -> None:
         """Establish connection to the Spot robot."""
+        global logger
+        logger.set_instance(TimedFileLogger(config))
+        logger.log("Robot started")
+
         try:
-            # Create robot object and authenticate
-            sdk = bosdyn.client.create_standard_sdk('RobotStateClient')
-            self.robot = sdk.create_robot(self.spot_config.get('wifi_default_address'))
-            self.robot.authenticate(
-                self.spot_config.get('spot_admin_console_username'),
-                self.spot_config.get('spot_admin_console_password')
+            # Setup adapted from github.com/boston-dynamics/spot-sdk/blob/master/python/examples/hello_spot/hello_spot.py
+            spot_env_config = environment.get_environment_config(config, ["spot"])
+            robot_config = config["robot_parameters"]
+            sdk = bosdyn_client.create_standard_sdk("understanding-spot")
+
+            # setup logging
+            bosdyn_util.setup_logging(robot_config["verbose"])
+
+            # setup robot
+            self.robot.set_instance(sdk.create_robot(spot_env_config["wifi_default_address"]))
+            environment.set_robot_password(config)
+            bosdyn_util.authenticate(self.robot)
+
+            # Establish time sync with the robot. This kicks off a background thread to establish time sync.
+            # Time sync is required to issue commands to the robot. After starting time sync thread, block
+            # until sync is established.
+            self.robot.time_sync.wait_for_sync()
+
+            # Verify the robot is not estopped and that an external application has registered and holds
+            # an estop endpoint.
+            self._verify_estop()
+
+            # The robot state client will allow us to get the robot's state information, and construct
+            # a command using frame information published by the robot.
+            self.robot_state_client.set_instance(
+                self.robot.ensure_client(RobotStateClient.default_service_name)
             )
             
-            # Establish time sync with the robot
-            bosdyn.client.util.authenticate(self.robot)
-            self.robot.time_sync.wait_for_sync()
-            
-            # Initialize clients
             self.image_client = self.robot.ensure_client(ImageClient.default_service_name)
-            self.robot_state_client = self.robot.ensure_client(RobotStateClient.default_service_name)
-            
+
+            # robot.logger.info(str(robot_state))
+
+            # Only one client at a time can operate a robot. Clients acquire a lease to
+            # indicate that they want to control a robot. Acquiring may fail if another
+            # client is currently controlling the robot. When the client is done
+            # controlling the robot, it should return the lease so other clients can
+            # control it. The LeaseKeepAlive object takes care of acquiring and returning
+            # the lease for us.
+
             # Get available cameras
             self._get_available_cameras()
             
@@ -117,6 +160,20 @@ class RobotState:
         except Exception as e:
             print(f"Failed to connect to Spot robot: {e}")
             self.robot = None
+
+    def _verify_estop(self):
+        """Verify the robot is not estopped"""
+        # https://github.com/boston-dynamics/spot-sdk/blob/master/python/examples/arm_joint_move/arm_joint_move.py
+
+        client = self.robot.ensure_client(EstopClient.default_service_name)
+        if client.get_status().stop_level != estop_pb2.ESTOP_LEVEL_NONE:
+            error_message = (
+                "Robot is estopped. Please use an external E-Stop client, such as the "
+                "estop SDK example, to configure E-Stop."
+            )
+            self.robot.logger.error(error_message)
+            raise EStopError(error_message)
+
     
     def _get_available_cameras(self) -> None:
         """Get a list of available cameras on the robot."""
@@ -612,3 +669,8 @@ class RobotState:
         except Exception as e:
             print(f"Error saving current frame: {e}")
             return False
+
+class EStopError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)

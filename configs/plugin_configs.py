@@ -3,8 +3,8 @@ from pathlib import Path
 
 from planner_core.model_factories import OpenAiChatModelFactory, OpenAiModelFactory
 
-from plugins.plugins_factory import PluginsFactory
-from planner_core.config_handler import ConfigHandler
+from source.retrieval_plugins.plugins_factory import PluginsFactory
+from source.planner_core.config_handler import ConfigHandler
 from configs.scenes_and_plugins_config import Scene
 
 from source.utils.logging_utils import setup_logging
