@@ -38,7 +38,7 @@ from planner_core.interfaces import AbstractLlmChat
 # =============================================================================
 # Scene Graph
 from LostFound.src.graph_nodes import LightSwitchNode, DrawerNode, ObjectNode
-
+from LostFound.src.scene_graph import SceneGraph
 
 
 import logging
@@ -56,9 +56,9 @@ class ItemInteractionsPlugin:
         self.light_switch_detection = LightSwitchDetection()
         self.frame_transformer = FrameTransformerSingleton()
         self.light_switch_interaction = LightSwitchInteraction(self.frame_transformer, self.config)
+        self.vis_block = True
 
-    @kernel_function(description="function to call to push a certain light switch", name="RobotNavigation")
-    def push_light_switch(self, light_switch_node: LightSwitchNode):
+    def _push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> str:
         
         # Now hard code the normal of the light switch (has to be done in the scene graph)
         light_switch_node.set_normal(np.array([-1, 0, 0]))
@@ -83,7 +83,12 @@ class ItemInteractionsPlugin:
         # Move spot to the center of the scene
         #################################
         move_body(POSE_CENTER, frame_name)
-    
+
+        #################################
+        # Check lamp states pre interaction
+        #################################
+        lamp_images_pre = self.light_switch_interaction.check_lamps(POSES_LAMPS, frame_name)
+
         #################################
         # Move body to switch
         #################################
@@ -125,11 +130,11 @@ class ItemInteractionsPlugin:
         )
 
         if refined_pose is not None:
-            push_light_switch(refined_pose, frame_name, z_offset=True, forces=FORCES)
+            push_light_switch(refined_pose, frame_name, z_offset=True, forces=self.config["FORCES"])
         else:
-            logging.warning(f"Refined pose is None for switch {idx+1} of {len(switch_nodes)}")
+            logging.warning(f"Refined pose is None for switch")
             logging.warning(f"Pushing light switch without refinement")
-            push_light_switch(pose, frame_name, z_offset=True, forces=FORCES)
+            push_light_switch(pose, frame_name, z_offset=True, forces=self.config["FORCES"])
 
         stow_arm()
         
@@ -137,26 +142,26 @@ class ItemInteractionsPlugin:
         # affordance detection
         #################################
         logging.info("affordance detection starting...")
-        affordance_dict = light_switch_detection.light_switch_affordance_detection(refined_box, color_response, 
-                                                AFFORDANCE_DICT_LIGHT_SWITCHES, config["gpt_api_key"])
+        affordance_dict = self.light_switch_detection.light_switch_affordance_detection(refined_box, color_response, 
+                                                self.config["AFFORDANCE_DICT_LIGHT_SWITCHES"], self.config["gpt_api_key"])
 
         #################################
         #  light switch interaction based on affordance
         #################################
         switch_interaction_start_time = time.time()
 
-        offsets, switch_type = light_switch_interaction.determine_switch_offsets_and_type(affordance_dict, GRIPPER_HEIGHT, GRIPPER_WIDTH)
-        light_switch_interaction.switch_interaction(switch_type, refined_pose, offsets, frame_name, FORCES)
+        offsets, switch_type = self.light_switch_interaction.determine_switch_offsets_and_type(affordance_dict, self.config["GRIPPER_HEIGHT"], self.config["GRIPPER_WIDTH"])
+        self.light_switch_interaction.switch_interaction(switch_type, refined_pose, offsets, frame_name, self.config["FORCES"])
         stow_arm()
-        logging.info(f"Tried interaction with switch {idx + 1} of {len(switch_nodes)}")
+        logging.info(f"Tried interaction with switch")
         
         #################################
         # check lamp states post interaction
         #################################
         move_body(POSE_CENTER, frame_name)
-        lamp_images_post = light_switch_interaction.check_lamps(POSES_LAMPS, frame_name)
+        lamp_images_post = self.light_switch_interaction.check_lamps(POSES_LAMPS, frame_name)
 
-        lamp_state_changes = light_switch_interaction.get_lamp_state_changes(lamp_images_pre, lamp_images_post, vis_block=self.vis_block)
+        lamp_state_changes = self.light_switch_interaction.get_lamp_state_changes(lamp_images_pre, lamp_images_post, vis_block=self.vis_block)
 
         #################################
         # add lamps to the scene graph
@@ -164,18 +169,18 @@ class ItemInteractionsPlugin:
         for idx, state_change in enumerate(lamp_state_changes):
             if state_change == 1 or state_change == -1:
                 # add lamp to switch, here the scene graph gets updated
-                switch.add_lamp(IDS_LAMPS[idx])
+                light_switch_node.add_lamp(IDS_LAMPS[idx])
             elif state_change == 0:
                 pass
         
         if self.vis_block:
             scene_graph.visualize(labels=True, connections=True, centroids=True)
 
-        # Copy lamp images fo
+        # Copy lamp images for future use
         lamp_images_pre = lamp_images_post.copy()
 
         # Logging
-        logging.info(f"Interaction with switch {idx+1} of {len(switch_nodes)} finished")
+        logging.info(f"Interaction with switch finished")
         switch_interaction_end_time = time.time()
         logging.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
         end_time_total = time.time()
@@ -183,3 +188,9 @@ class ItemInteractionsPlugin:
 
         stow_arm()
         return frame_name
+
+    @kernel_function(description="function to call to push a certain light switch", name="RobotNavigation")
+    def push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> None:
+        config = Config()
+        take_control_with_function(config, function=self._push_light_switch, light_switch_node=light_switch_node, scene_graph=scene_graph, body_assist=True)
+        logging.info("Light switch pushed")
