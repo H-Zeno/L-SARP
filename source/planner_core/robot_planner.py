@@ -1,4 +1,5 @@
 import yaml
+import logging
 
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -19,8 +20,8 @@ from configs.scenes_and_plugins_config import Scene
 from source.planner_core.robot_state import RobotState
 from configs.agent_instruction_prompts import TASK_EXECUTION_AGENT_INSTRUCTIONS, TASK_GENERATION_AGENT_INSTRUCTIONS, GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS
 
-from source.utils.logging_utils import setup_logging
-logger_plugins, logger_main = setup_logging()
+# Just get the logger, configuration is handled in main.py
+logger = logging.getLogger(__name__)
 
 # Import the action plugins
 from source.robot_plugins.item_interactions import ItemInteractionsPlugin
@@ -32,6 +33,7 @@ class RobotPlanner:
     def __init__(
         self, 
         scene: Scene
+
     ) -> None:
         """
         Constructor for the RobotPlanner class that handles plugin initialization and planning.
@@ -52,7 +54,7 @@ class RobotPlanner:
         self._planner_settings = dotenv_values(".env_core_planner")
 
         # Set the configurations for the retrieval plugins
-        self._enabled_retrieval_plugins = self.scene.retrieval_plugins
+        self._enabled_retrieval_plugins = scene.retrieval_plugins
         self._retrieval_plugins_configs = plugin_configs
         
         # Create the kernel and the robot state
@@ -96,7 +98,7 @@ class RobotPlanner:
         # Set up highly intelligent OpenAI model for answering question
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="general_intelligence",
-            api_key=dotenv_values().get("OPENAI_API_KEY"),
+            api_key=self._planner_settings.get("OPENAI_API_KEY"),
             ai_model_id="gpt-4o-2024-11-20"))
 
         # # Set up highly intelligent Google Gemini model for answering question
@@ -108,13 +110,13 @@ class RobotPlanner:
         # Set Up Reasoning Model for the analysis of the experiences to requirements matching
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="small_reasoning_model",
-            api_key=dotenv_values().get("OPENAI_API_KEY"),
+            api_key=self._planner_settings.get("OPENAI_API_KEY"),
             ai_model_id="gpt-4o-2024-11-20")) # will be replaced by o3 mini in the future!
         
         # Set Up small and cheap model for the processing of certain user responses
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="small_cheap_model",
-            api_key=dotenv_values().get("OPENAI_API_KEY"),
+            api_key=self._planner_settings.get("OPENAI_API_KEY"),
             ai_model_id="gpt-4o-mini"))
 
 
@@ -135,7 +137,7 @@ class RobotPlanner:
             service_id="general_intelligence",
             kernel=self.kernel,
             name="TaskGenerationAgent",
-            instructions=self._task_generation_agent_instructions,
+            instructions=TASK_GENERATION_AGENT_INSTRUCTIONS,
             execution_settings=task_generation_endpoint_settings
         )
 
@@ -157,7 +159,7 @@ class RobotPlanner:
             service_id="general_intelligence",
             kernel=self.kernel,
             name="TaskExecutionAgent",
-            instructions=self._task_execution_agent_instructions,
+            instructions=TASK_EXECUTION_AGENT_INSTRUCTIONS,
             execution_settings=task_execution_endpoint_settings
         )
 
@@ -176,7 +178,7 @@ class RobotPlanner:
             service_id="general_intelligence",
             kernel=self.kernel,
             name="GoalCompletionCheckerAgent",
-            instructions=self._goal_completion_checker_agent_instructions,
+            instructions=GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
             execution_settings=goal_completion_checker_endpoint_settings
         )
 
@@ -186,6 +188,7 @@ class RobotPlanner:
             agents=agents,
             termination_strategy=ApprovalTerminationStrategy(agents=[self.goal_completion_checker_agent], maximum_iterations=10)
         )
+        logger.debug(f" Agent Group Chat successfully setup.")
         return self.application_question_answer_group_chat
 
 

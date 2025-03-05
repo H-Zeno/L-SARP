@@ -2,8 +2,8 @@ import logging
 from pathlib import Path
 from typing import Annotated, Optional, List, Set
 
-from llama_index.legacy.embeddings.base import BaseEmbedding
-from llama_index.legacy.llms.base import BaseLLM
+from llama_index.core.base.embeddings.base import BaseEmbedding
+from llama_index.core.base.llms.base import BaseLLM
 from llama_index.core.vector_stores.types import MetadataFilters, ExactMatchFilter
 from llama_index.core.indices.base import BaseIndex
 from semantic_kernel.functions.kernel_function_decorator import kernel_function

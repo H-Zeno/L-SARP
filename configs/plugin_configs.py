@@ -1,4 +1,5 @@
 import yaml
+import logging
 from pathlib import Path
 
 from planner_core.model_factories import OpenAiChatModelFactory, OpenAiModelFactory
@@ -6,8 +7,6 @@ from planner_core.model_factories import OpenAiChatModelFactory, OpenAiModelFact
 from source.retrieval_plugins.plugins_factory import PluginsFactory
 from source.planner_core.config_handler import ConfigHandler
 from configs.scenes_and_plugins_config import Scene
-
-from source.utils.logging_utils import setup_logging
 
 plugins_dotenv = Path(".env_plugins")
 config_handler = ConfigHandler(plugins_dotenv)
@@ -20,16 +19,15 @@ with open("configs/config.yaml", "r") as f:
     config = yaml.safe_load(f)
 #endregion
 
-#region Logging Setup
-logger_plugins, logger_main = setup_logging()
-#endregion
+# Just get the logger, configuration is handled in main.py
+logger = logging.getLogger(__name__)
 
 # Load the configurations for this specific scene
 active_scene_name = config["robot_planner_settings"]["active_scene"]
 active_scene = Scene[active_scene_name]
 if active_scene not in Scene:
     raise ValueError(f"Selected active scene '{active_scene}' (mentioned in config.yaml) not found in Scene enum")
-logger_main.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
+logger.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
 
 path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
 if not path_to_scene_data.exists():

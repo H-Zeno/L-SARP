@@ -3,10 +3,10 @@ from typing import Optional
 
 from llama_index.embeddings.clip import ClipEmbedding
 
-from plugins.text_plugin import TextPlugin
-from plugins.sql_plugin import SqlPlugin
-from plugins.image_plugin import ImagePlugin
-from plugins.nav_plugin import NavPlugin
+from retrieval_plugins.text_plugin import TextPlugin
+from retrieval_plugins.sql_plugin import SqlPlugin
+from retrieval_plugins.image_plugin import ImagePlugin
+from retrieval_plugins.nav_plugin import NavPlugin
 from planner_core.config_handler import ConfigPrefix
 from planner_core.interfaces import AbstractModelFactory, AbstractLlmChatFactory
 

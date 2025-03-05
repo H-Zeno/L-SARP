@@ -26,6 +26,8 @@ from bosdyn.client.robot_command import (
 from bosdyn.client.image import ImageClient
 
 from bosdyn.client.robot_state import RobotStateClient
+from bosdyn.client import Sdk
+
 from robot_utils.basic_movements import move_body
 from robot_utils.frame_transformer import FrameTransformerSingleton
 

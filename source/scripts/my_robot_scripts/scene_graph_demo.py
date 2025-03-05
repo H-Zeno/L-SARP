@@ -242,7 +242,7 @@ class _Push_Light_Switch(ControlFunction):
             if self.vis_block:
                 scene_graph.visualize(labels=True, connections=True, centroids=True)
 
-            # Copy lamp images fo
+            # Copy lamp images for future use
             lamp_images_pre = lamp_images_post.copy()
 
             # Logging

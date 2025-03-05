@@ -1,38 +1,44 @@
 #region Imports
 import asyncio
 import json
+import os
 import yaml
 import logging
 import logging.config
 from pathlib import Path
 from dotenv import dotenv_values
 from datetime import datetime
+import atexit
 
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion, OpenAIChatPromptExecutionSettings
-from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
-from semantic_kernel.contents.function_result_content import FunctionResultContent
-from semantic_kernel.contents.function_call_content import FunctionCallContent
-from semantic_kernel.contents import ChatHistory
-from semantic_kernel.functions import KernelArguments
-
-from source.utils.logging_utils import setup_logging
 from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
+from source.utils.recursive_config import Config
+
 from configs.scenes_and_plugins_config import Scene
 from planner_core.robot_planner import RobotPlanner
-from configs.plugin_configs import plugin_configs
+from planner_core.robot_state import RobotState
 
 from LostFound.src.scene_graph import get_scene_graph
+from LostFound.src.utils import scene_graph_to_json
 
-#endregion
+# Set up logging - this will be the single source of logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logging.getLogger("kernel").setLevel(logging.DEBUG)
 
-#region Loading Loggers
-logger_plugins, logger_main = setup_logging()
-#endregion
+logger = logging.getLogger(__name__)
+
+# Set debug level based on config or environment variable
+debug = True  # This could be moved to config
+if debug:
+    logging.getLogger().setLevel(logging.DEBUG)
+
 
 #region Config Loading
-with open("configs/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+config = Config()
 #endregion
+
 
 async def main():
   
@@ -41,7 +47,7 @@ async def main():
     active_scene = Scene[active_scene_name]
     if active_scene not in Scene:
         raise ValueError(f"Selected active scene '{active_scene}' (mentioned in config.yaml) not found in Scene enum")
-    logger_main.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
+    logger.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
 
     path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
     if not path_to_scene_data.exists():
@@ -49,9 +55,26 @@ async def main():
     # endregion Scene Setup
 
     # region Load the Scene Graph
-    scene_graph = get_scene_graph(path_to_scene_data)
-    scene_graph.visualize(labels=True, connections=True, centroids=True)
+    # base_path = config.get_subpath("prescans")
+    # ending = config["pre_scanned_graphs"]["high_res"]
+    # SCAN_DIR = os.path.join(base_path, ending)
+
+    # scene_graph = get_scene_graph(SCAN_DIR, drawers=True, light_switches=True)
+
+    scene_graph_json = json.load(open('/local/home/zhamers/L-SARP/data/3D-Scene-Understanding/scene_graph.json'))
+    scene_graph_string = json.dumps(scene_graph_json)
+
+
+    # scene_graph.visualize(labels=True, connections=True, centroids=True)
     # endregion Load the Scene Graph
+
+    #region Robot State
+    # robot_state = RobotState(scene_graph=scene_graph)
+    # robot_state.connect_to_spot(config)
+
+    # # Register a cleanup handler to ensure proper shutdown
+    # atexit.register(robot_state.cleanup)
+    #endregion Robot State
 
     #region Robot Planner
     robot_planner = RobotPlanner(scene=active_scene)
@@ -102,7 +125,7 @@ async def main():
                     responses = json.load(file)
 
         except Exception as e:
-            logger_main.error(f"Error loading goals: {e}")
+            logger.error(f"Error loading goals: {e}")
             raise
         
         # Handle each Offline Predefined Goal
@@ -111,13 +134,30 @@ async def main():
                 continue
             goal_text = f"{nr}. {goal}"
 
-            logger_plugins.info(separator)
-            logger_plugins.info(goal_text)
-            logger_main.info(separator)
-            logger_main.info(goal_text)
+            logger.info(separator)
+            logger.info(goal_text)
+
+            # 1. We simply take the goal and ask the task execution agent to complete this task
+
+            task_completion_prompt_template = """
+            It is your job to complete the following task: {goal}
+
+            You have access to the following information to reason on how to complete the task:
+            1. An up-to-date scene graph representation of the environment
+            2. A video feed of the robot's current front camera view
+            3. The current location of the robot in the environment
+
+            Here is the scene graph:
+            {scene_graph}
+            
+            Here is the robot's current position:
+            (0, 0, 0)
+            """
+
+            task_completion_prompt = task_completion_prompt_template.format(goal=goal_text, scene_graph=scene_graph_string)
 
             try:
-                response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, goal_text)
+                response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, task_completion_prompt)
                 
                 responses[nr] = {
                     "goal": goal_text,
@@ -129,10 +169,9 @@ async def main():
 
             except Exception as e:
                 error_str = f"Error processing goal {goal_text}: {e}"
-                logger_plugins.error(error_str)
-                logger_main.error(error_str)
+                logger.error(error_str)
 
-        logger_main.info("Finished processing Offline Predefined Goals")
+        logger.info("Finished processing Offline Predefined Goals")
 
     else:
         raise ValueError(f"Invalid task instruction mode: {config['robot_planner_settings']['task_instruction_mode']}")

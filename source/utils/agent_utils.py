@@ -4,11 +4,10 @@ from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.functions.kernel_arguments import KernelArguments
 from semantic_kernel.contents.function_call_content import FunctionCallContent
 from semantic_kernel.contents.function_result_content import FunctionResultContent
-from semantic_kernel.contents.chat_history import ChatHistory
+from semantic_kernel.contents import ChatHistory, ChatMessageContent, ImageContent, TextContent
 from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent
 from typing import Tuple
 
-# Just get the logger, configuration is handled in main.py
 logger = logging.getLogger(__name__)
 
 def _write_content(content: ChatMessageContent, debug: bool = False) -> None:
@@ -50,7 +49,8 @@ async def invoke_agent(
 
 async def invoke_agent_group_chat(
     group_chat: AgentGroupChat, 
-    input_message: str, 
+    input_text_message: str, 
+    input_image_message: ImageContent = None,
     save_to_history: bool = True,
     debug: bool = True
 ) -> Tuple[str, AgentGroupChat]:
@@ -67,12 +67,17 @@ async def invoke_agent_group_chat(
         tuple: (response string, updated group chat)
     """
     if debug:
-        logger.debug(f"# {AuthorRole.USER}: '{input_message}'")
+        logger.debug(f"# {AuthorRole.USER}: '{input_text_message}'")
     
     if save_to_history:
-        await group_chat.add_chat_message(
-            ChatMessageContent(role=AuthorRole.USER, content=input_message)
-        )
+        if input_image_message is not None:
+            await group_chat.add_chat_message(
+                ChatMessageContent(role=AuthorRole.USER, items=[TextContent(text=input_text_message), input_image_message])
+            )
+        else:
+            await group_chat.add_chat_message(
+                ChatMessageContent(role=AuthorRole.USER, content=input_text_message)
+            )
         
     response = ""
     async for content in group_chat.invoke():

@@ -3,18 +3,17 @@ from __future__ import annotations
 # =============================================================================
 # Standard Library Imports
 import logging
-import random
 import time
 import os
 import copy
 import numpy as np
+
 # =============================================================================
 # Bosdyn and Robot Utilities
 from bosdyn.client import Sdk
 from bosdyn.api.image_pb2 import ImageResponse
 from robot_utils.basic_movements import (
-    carry_arm, stow_arm, move_body, gaze, carry, move_arm
-)
+    carry_arm, stow_arm, move_body)
 from robot_utils.advanced_movement import push_light_switch, turn_light_switch, move_body_distanced, push
 from robot_utils.frame_transformer import FrameTransformerSingleton
 from robot_utils.video import (
@@ -187,9 +186,15 @@ class ItemInteractionsPlugin:
         logging.info(f"Total time per switch: {end_time_total - body_to_switch_start_time}")
 
         stow_arm()
+
+        #################################
+        # Move back to the center of the scene  
+        #################################
+        move_body(POSE_CENTER, frame_name)
+
         return frame_name
 
-    @kernel_function(description="function to call to push a certain light switch", name="RobotNavigation")
+    @kernel_function(description="function to call to push a certain light switch present in the scene graph", name="push_light_switch")
     def push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> None:
         config = Config()
         take_control_with_function(config, function=self._push_light_switch, light_switch_node=light_switch_node, scene_graph=scene_graph, body_assist=True)

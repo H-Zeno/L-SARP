@@ -141,7 +141,7 @@ def calculate_light_switch_poses(
 
     depth_image, depth_response = depth_image_response
 
-    # # determine center coordinates for all handles
+    # determine center coordinates for all handles
     for bbox in boxes:
         center = determine_handle_center(depth_image, bbox)
         centers.append(center)

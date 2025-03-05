@@ -9,9 +9,9 @@ from llama_index.core.schema import TextNode
 from llama_index.core.llms import ChatMessage
 from llama_index.core.retrievers import SQLRetriever
 from llama_index.core.prompts.default_prompts import DEFAULT_TEXT_TO_SQL_PROMPT
-from llama_index.legacy.llms.base import BaseLLM
 from llama_index.core.llms import ChatResponse
 from llama_index.core.query_engine import NLSQLTableQueryEngine
+from llama_index.legacy.llms.base import BaseLLM
 from llama_index.legacy.embeddings.base import BaseEmbedding
 from llama_index.core.query_pipeline import (
     QueryPipeline as QP,
