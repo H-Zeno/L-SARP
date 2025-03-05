@@ -1,5 +1,8 @@
 import yaml
 import logging
+import asyncio
+
+from openai import AsyncOpenAI
 
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -9,8 +12,10 @@ from semantic_kernel import Kernel
 from semantic_kernel.agents import ChatCompletionAgent, AgentGroupChat
 from semantic_kernel.agents.strategies.termination.termination_strategy import TerminationStrategy
 from semantic_kernel.services.ai_service_client_base import AIServiceClientBase
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings, OpenAIChatCompletion
+
 from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings, OpenAIChatCompletion
+
 
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.functions import KernelArguments
@@ -107,12 +112,22 @@ class RobotPlanner:
         #     api_key=dotenv_values().get("GEMINI_API_KEY"),
         #     gemini_model_id="gemini-2.0-flash"))
 
-        # Set Up Reasoning Model for the analysis of the experiences to requirements matching
-        self.kernel.add_service(OpenAIChatCompletion(
-            service_id="small_reasoning_model",
-            api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="gpt-4o-2024-11-20")) # will be replaced by o3 mini in the future!
+        # # Set Up Reasoning Model for the analysis of the experiences to requirements matching
+        # self.kernel.add_service(OpenAIChatCompletion(
+        #     service_id="opneai_reasoning_model",
+        #     api_key=self._planner_settings.get("OPENAI_API_KEY"),
+        #     ai_model_id="gpt-4o-2024-11-20")) # will be replaced by o3 mini in the future!
         
+        self.kernel.add_service(OpenAIChatCompletion(
+            service_id="deepseek-r1",
+            ai_model_id="deepseek-ai/deepseek-r1",
+            async_client=AsyncOpenAI(
+                api_key=self._planner_settings.get("DEEPSEEK_API_KEY"),
+                base_url="https://integrate.api.nvidia.com/v1"
+            ),
+            
+        ))
+
         # Set Up small and cheap model for the processing of certain user responses
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="small_cheap_model",
@@ -127,14 +142,14 @@ class RobotPlanner:
 
         # Create task generation agent with auto function calling
         task_generation_endpoint_settings = OpenAIChatPromptExecutionSettings(
-            service_id="general_intelligence",
+            service_id="deepseek-r1",
             max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
             temperature=float(self._planner_settings.get("TEMPERATURE")),
             top_p=float(self._planner_settings.get("TOP_P")),
             function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
         )
         self.task_generation_agent = ChatCompletionAgent(
-            service_id="general_intelligence",
+            service_id="deepseek-r1",
             kernel=self.kernel,
             name="TaskGenerationAgent",
             instructions=TASK_GENERATION_AGENT_INSTRUCTIONS,
