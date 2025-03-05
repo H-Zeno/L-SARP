@@ -1,4 +1,3 @@
-#region Imports
 import asyncio
 import json
 import os
@@ -9,6 +8,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 from datetime import datetime
 import atexit
+import re
 
 from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
 from source.utils.recursive_config import Config
@@ -19,6 +19,8 @@ from planner_core.robot_state import RobotState
 
 from LostFound.src.scene_graph import get_scene_graph
 from LostFound.src.utils import scene_graph_to_json
+
+from semantic_kernel.contents.chat_history import ChatHistory
 
 # Set up logging - this will be the single source of logging configuration
 logging.basicConfig(
@@ -64,7 +66,6 @@ async def main():
     scene_graph_json = json.load(open('/local/home/zhamers/L-SARP/data/3D-Scene-Understanding/scene_graph.json'))
     scene_graph_string = json.dumps(scene_graph_json)
 
-
     # scene_graph.visualize(labels=True, connections=True, centroids=True)
     # endregion Load the Scene Graph
 
@@ -81,11 +82,11 @@ async def main():
     robot_planner.setup_services()
     robot_planner.add_retrieval_plugins()
     robot_planner.add_action_plugins()
-    robot_planner.initialize_task_generation_agent()
+    robot_planner.initialize_task_planner_agent()
     robot_planner.initialize_task_execution_agent()
     robot_planner.initialize_goal_completion_checker_agent()
 
-    robot_planner_group_chat =robot_planner.setup_agent_group_chat([robot_planner.task_generation_agent, robot_planner.task_execution_agent, robot_planner.goal_completion_checker_agent])
+    robot_planner_group_chat =robot_planner.setup_agent_group_chat([robot_planner.task_planner_agent, robot_planner.task_execution_agent, robot_planner.goal_completion_checker_agent])
 
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -139,13 +140,29 @@ async def main():
 
             # 1. We simply take the goal and ask the task execution agent to complete this task
 
+            task_planning_prompt_template = """
+            Please generate a plan to complete the following goal: {goal}
+
+            You have access to the following information to reason on how to complete the goal.
+            1. An up-to-date scene graph representation of the environment
+            2. The current location of the robot in the environment
+            3. The different actions that the robot can perform
+
+            Here is the scene graph:
+            {scene_graph}
+
+            Here is the robot's current position:
+            (0, 0, 0)
+            """
+
             task_completion_prompt_template = """
-            It is your job to complete the following task: {goal}
+            It is your job to complete the following task: {task}
+            
+            This task is part of the following plan: {plan}
 
             You have access to the following information to reason on how to complete the task:
             1. An up-to-date scene graph representation of the environment
-            2. A video feed of the robot's current front camera view
-            3. The current location of the robot in the environment
+            2. The current location of the robot in the environment
 
             Here is the scene graph:
             {scene_graph}
@@ -154,22 +171,57 @@ async def main():
             (0, 0, 0)
             """
 
-            task_completion_prompt = task_completion_prompt_template.format(goal=goal_text, scene_graph=scene_graph_string)
+            
+            # We need an "okay to follow plan" agent that checks the current action and gives the go-ahead
 
-            try:
-                response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, task_completion_prompt)
+            valid_plan = False
+            while True:
                 
-                responses[nr] = {
-                    "goal": goal_text,
-                    "response": response,
-                }
+                # Create the plan
+                if not valid_plan:
+                    
+                    plan_generation_prompt = task_planning_prompt_template.format(goal=goal_text, scene_graph=scene_graph_string)
+                    planning_chat_history = ChatHistory()
+                    plan_response, planning_chat_history = await invoke_agent(robot_planner.task_planner_agent, plan_generation_prompt, chat_history=planning_chat_history)
+                    
+                    # Extract JSON from the response using regex
+                    json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*`*', plan_response, re.DOTALL)
+                    if json_match:
+                        try:
+                            current_plan = json.loads(json_match.group(1))
+                            logger.info(f"Extracted plan: {json.dumps(current_plan, indent=2)}")
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse JSON from response: {e}")
+                            current_plan = None
+                    else:
+                        logger.error("No JSON found in the response")
+                        current_plan = None
+                    
+                    logger.info(f"Raw plan response: {str(plan_response)}")
+                    logger.info(f"Extracted plan: {current_plan}")
 
-                with responses_path.open("w") as file:
-                    json.dump(responses, file, indent=4)
+                # task_completion_prompt = task_completion_prompt_template.format(goal=goal_text, scene_graph=scene_graph_string)
 
-            except Exception as e:
-                error_str = f"Error processing goal {goal_text}: {e}"
-                logger.error(error_str)
+    
+
+            # try:
+                
+                
+
+
+            #     response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, task_completion_prompt)
+                
+            #     responses[nr] = {
+            #         "goal": goal_text,
+            #         "response": response,
+            #     }
+
+            #     with responses_path.open("w") as file:
+            #         json.dump(responses, file, indent=4)
+
+            # except Exception as e:
+            #     error_str = f"Error processing goal {goal_text}: {e}"
+            #     logger.error(error_str)
 
         logger.info("Finished processing Offline Predefined Goals")
 
