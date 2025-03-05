@@ -86,7 +86,7 @@ async def main():
     robot_planner.initialize_task_execution_agent()
     robot_planner.initialize_goal_completion_checker_agent()
 
-    robot_planner_group_chat =robot_planner.setup_agent_group_chat([robot_planner.task_planner_agent, robot_planner.task_execution_agent, robot_planner.goal_completion_checker_agent])
+    robot_task_completion_group_chat =robot_planner.setup_task_completion_group_chat()
 
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -141,17 +141,15 @@ async def main():
             # 1. We simply take the goal and ask the task execution agent to complete this task
 
             task_planning_prompt_template = """
-            Please generate a plan to complete the following goal: {goal}
+            1. Please generate a plan to complete the following goal: {goal}
 
-            You have access to the following information to reason on how to complete the goal.
-            1. An up-to-date scene graph representation of the environment
-            2. The current location of the robot in the environment
-            3. The different actions that the robot can perform
+            2. Tasks completed so far:
+            {tasks_completed}
 
-            Here is the scene graph:
+            3. Here is the scene graph:
             {scene_graph}
 
-            Here is the robot's current position:
+            4. Here is the robot's current position:
             (0, 0, 0)
             """
 
@@ -170,20 +168,20 @@ async def main():
             Here is the robot's current position:
             (0, 0, 0)
             """
-
             
             # We need an "okay to follow plan" agent that checks the current action and gives the go-ahead
 
             valid_plan = False
+            tasks_completed = []
+            planning_chat_history = ChatHistory()
             while True:
                 
                 # Create the plan
                 if not valid_plan:
-                    
-                    plan_generation_prompt = task_planning_prompt_template.format(goal=goal_text, scene_graph=scene_graph_string)
-                    planning_chat_history = ChatHistory()
+                    plan_generation_prompt = task_planning_prompt_template.format(goal=goal_text, tasks_completed=', '.join(map(str, tasks_completed)), scene_graph=scene_graph_string)
                     plan_response, planning_chat_history = await invoke_agent(robot_planner.task_planner_agent, plan_generation_prompt, chat_history=planning_chat_history)
-                    
+                    logger.info(f"Raw plan response: {str(plan_response)}")
+
                     # Extract JSON from the response using regex
                     json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*`*', plan_response, re.DOTALL)
                     if json_match:
@@ -195,18 +193,19 @@ async def main():
                             current_plan = None
                     else:
                         logger.error("No JSON found in the response")
-                        current_plan = None
-                    
-                    logger.info(f"Raw plan response: {str(plan_response)}")
-                    logger.info(f"Extracted plan: {current_plan}")
+                        raise ValueError("No JSON found in the response")
+
+                robot_planner.plan = current_plan
+                for task in current_plan["tasks"]:
+                    robot_planner.task = task
+                    task_execution_prompt = task_completion_prompt_template.format(task=task, plan=current_plan, scene_graph=scene_graph_string)
+
+                    task_completion_response, robot_task_completion_group_chat = await invoke_agent_group_chat(robot_task_completion_group_chat, task_execution_prompt)
+                
+
+
 
                 # task_completion_prompt = task_completion_prompt_template.format(goal=goal_text, scene_graph=scene_graph_string)
-
-    
-
-            # try:
-                
-                
 
 
             #     response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, task_completion_prompt)
