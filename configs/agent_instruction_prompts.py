@@ -12,7 +12,8 @@ You have access to the following information to reason on how to complete the ta
 3. A front-facing camera image of the environment
 
 
-When something is not going as planned, please let the task planner agent know and explain the problem in detail. 
+When something is not going as planned, please let the task planner agent know and explain the problem in detail.
+You must prioritize safety above everything else. 
 """
 
 

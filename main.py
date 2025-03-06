@@ -15,10 +15,6 @@ from source.utils.recursive_config import Config
 
 from configs.scenes_and_plugins_config import Scene
 from planner_core.robot_planner import RobotPlanner
-from planner_core.robot_state import RobotState
-
-from LostFound.src.scene_graph import get_scene_graph
-from LostFound.src.utils import scene_graph_to_json
 
 from semantic_kernel.contents.chat_history import ChatHistory
 
@@ -82,11 +78,12 @@ async def main():
     robot_planner.setup_services()
     robot_planner.add_retrieval_plugins()
     robot_planner.add_action_plugins()
+    robot_planner.add_planning_plugins()
     robot_planner.initialize_task_planner_agent()
     robot_planner.initialize_task_execution_agent()
     robot_planner.initialize_goal_completion_checker_agent()
 
-    robot_task_completion_group_chat =robot_planner.setup_task_completion_group_chat()
+    # robot_task_completion_group_chat =robot_planner.setup_task_completion_group_chat()
 
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -140,18 +137,6 @@ async def main():
 
             # 1. We simply take the goal and ask the task execution agent to complete this task
 
-            task_planning_prompt_template = """
-            1. Please generate a plan to complete the following goal: {goal}
-
-            2. Tasks completed so far:
-            {tasks_completed}
-
-            3. Here is the scene graph:
-            {scene_graph}
-
-            4. Here is the robot's current position:
-            (0, 0, 0)
-            """
 
             task_completion_prompt_template = """
             It is your job to complete the following task: {task}
@@ -161,51 +146,50 @@ async def main():
             You have access to the following information to reason on how to complete the task:
             1. An up-to-date scene graph representation of the environment
             2. The current location of the robot in the environment
+            3. A front-facing camera image of the environment
 
             Here is the scene graph:
             {scene_graph}
             
             Here is the robot's current position:
             (0, 0, 0)
+
+            When you are stuck or something goes not as planned, please:
+            1. Call the update_task_plan function to create a new plan on how to achieve the goal
             """
             
             # We need an "okay to follow plan" agent that checks the current action and gives the go-ahead
-
             valid_plan = False
             tasks_completed = []
             planning_chat_history = ChatHistory()
+           
+
+            # Create the initial plan
+            await robot_planner.create_task_plan(robot_planner, planning_chat_history)
+
+            # Main Agentic Loop
             while True:
                 
-                # Create the plan
-                if not valid_plan:
-                    plan_generation_prompt = task_planning_prompt_template.format(goal=goal_text, tasks_completed=', '.join(map(str, tasks_completed)), scene_graph=scene_graph_string)
-                    plan_response, planning_chat_history = await invoke_agent(robot_planner.task_planner_agent, plan_generation_prompt, chat_history=planning_chat_history)
-                    logger.info(f"Raw plan response: {str(plan_response)}")
-
-                    # Extract JSON from the response using regex
-                    json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*`*', plan_response, re.DOTALL)
-                    if json_match:
-                        try:
-                            current_plan = json.loads(json_match.group(1))
-                            logger.info(f"Extracted plan: {json.dumps(current_plan, indent=2)}")
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Failed to parse JSON from response: {e}")
-                            current_plan = None
-                    else:
-                        logger.error("No JSON found in the response")
-                        raise ValueError("No JSON found in the response")
-
-                robot_planner.plan = current_plan
-                for task in current_plan["tasks"]:
+                # Execute the plan of action, with new
+                for task in robot_planner.plan["tasks"]:
+                    task_completion_chat_history = ChatHistory()
                     robot_planner.task = task
-                    task_execution_prompt = task_completion_prompt_template.format(task=task, plan=current_plan, scene_graph=scene_graph_string)
 
-                    task_completion_response, robot_task_completion_group_chat = await invoke_agent_group_chat(robot_task_completion_group_chat, task_execution_prompt)
-                
+                    # Execute the task
+                    task_execution_prompt = task_completion_prompt_template.format(task=task, plan=robot_planner.plan, scene_graph=scene_graph_string)
 
+                    task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, task_execution_prompt, chat_history=task_completion_chat_history, debug=True)
 
+                    # Break out of the task execution loop when replanning
+                    if robot_planner.replanned == True:
+                        break
+            
+                    # Activate the goal completion checker agent (small quick model)
 
-                # task_completion_prompt = task_completion_prompt_template.format(goal=goal_text, scene_graph=scene_graph_string)
+    
+
+                    
+
 
 
             #     response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, task_completion_prompt)
