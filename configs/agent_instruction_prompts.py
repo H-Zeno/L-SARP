@@ -39,26 +39,20 @@ When Uncertain:
 - Add environment exploration steps if required
 - Query your memory database
 
-Output Format:
-Provide tasks in this JSON structure:
-{
-    "tasks": [
-        "1. [First action to take]",
-        "2. [Next action]",
-        "3. [Following action]"
-    ]
-}
-
 Each task should be:
 - Clear and actionable
 - Sequential and logical
 - Specific to the robot's capabilities (mention the functions that should be called)
 
-ALWAYS return the plan in the JSON format, nothing else.
+Return ONLY the JSON object in this exact format (no other text):
+{model_description}
 
 """
 
 GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS = """"""
+
+
+
 
 
 # GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS = """

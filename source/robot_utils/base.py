@@ -111,7 +111,7 @@ def take_control_with_function(
     # Load the robot state
     robot_state_client = general_robot_state.robot_state_client
     robot = general_robot_state.robot
-    image_client = general_robot_state.image_client
+    # image_client = general_robot_state.image_client
 
     robot_state = robot_state_client.get_robot_state()
     lease_client = robot.ensure_client(
@@ -176,7 +176,7 @@ def take_control_with_function(
         # Execute the specific control function
         return_values = function(
             config,
-            sdk,
+            sdk=general_robot_state.sdk,
             *args,
             **kwargs,
         )

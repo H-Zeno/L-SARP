@@ -12,6 +12,7 @@ import re
 
 from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
 from source.utils.recursive_config import Config
+from source.LostFound.src.utils import get_scene_graph
 
 from configs.scenes_and_plugins_config import Scene
 from planner_core.robot_planner import RobotPlanner
@@ -28,7 +29,7 @@ logging.getLogger("kernel").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Set debug level based on config or environment variable
-debug = True  # This could be moved to config
+debug = False  # This could be moved to config
 if debug:
     logging.getLogger().setLevel(logging.DEBUG)
 
@@ -52,38 +53,19 @@ async def main():
         raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
     # endregion Scene Setup
 
-    # region Load the Scene Graph
-    # base_path = config.get_subpath("prescans")
-    # ending = config["pre_scanned_graphs"]["high_res"]
-    # SCAN_DIR = os.path.join(base_path, ending)
+    base_path = config.get_subpath("prescans")
+    ending = config["pre_scanned_graphs"]["high_res"]
+    SCAN_DIR = os.path.join(base_path, ending)
 
-    # scene_graph = get_scene_graph(SCAN_DIR, drawers=True, light_switches=True)
+    scene_graph = get_scene_graph(SCAN_DIR, drawers=True, light_switches=True)
 
-    scene_graph_json = json.load(open('/local/home/zhamers/L-SARP/data/3D-Scene-Understanding/scene_graph.json'))
-    scene_graph_string = json.dumps(scene_graph_json)
-
-    # scene_graph.visualize(labels=True, connections=True, centroids=True)
-    # endregion Load the Scene Graph
-
-    #region Robot State
     # robot_state = RobotState(scene_graph=scene_graph)
-    # robot_state.connect_to_spot(config)
 
     # # Register a cleanup handler to ensure proper shutdown
     # atexit.register(robot_state.cleanup)
-    #endregion Robot State
 
     #region Robot Planner
-    robot_planner = RobotPlanner(scene=active_scene)
-    robot_planner.setup_services()
-    robot_planner.add_retrieval_plugins()
-    robot_planner.add_action_plugins()
-    robot_planner.add_planning_plugins()
-    robot_planner.initialize_task_planner_agent()
-    robot_planner.initialize_task_execution_agent()
-    robot_planner.initialize_goal_completion_checker_agent()
-
-    # robot_task_completion_group_chat =robot_planner.setup_task_completion_group_chat()
+    robot_planner = RobotPlanner(scene=active_scene, scene_graph_string=scene_graph_string)
 
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -159,37 +141,28 @@ async def main():
             """
             
             # We need an "okay to follow plan" agent that checks the current action and gives the go-ahead
-            valid_plan = False
-            tasks_completed = []
-            planning_chat_history = ChatHistory()
            
-
-            # Create the initial plan
-            await robot_planner.create_task_plan(robot_planner, planning_chat_history)
+            # Set the goal and create the initial plan
+            await robot_planner.set_goal(goal)
 
             # Main Agentic Loop
             while True:
                 
                 # Execute the plan of action, with new
                 for task in robot_planner.plan["tasks"]:
-                    task_completion_chat_history = ChatHistory()
                     robot_planner.task = task
 
                     # Execute the task
                     task_execution_prompt = task_completion_prompt_template.format(task=task, plan=robot_planner.plan, scene_graph=scene_graph_string)
 
-                    task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, task_execution_prompt, chat_history=task_completion_chat_history, debug=True)
+                    task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, task_execution_prompt, chat_history=ChatHistory(), debug=debug)
 
                     # Break out of the task execution loop when replanning
                     if robot_planner.replanned == True:
+                        robot_planner.replanned = False
                         break
             
                     # Activate the goal completion checker agent (small quick model)
-
-    
-
-                    
-
 
 
             #     response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, task_completion_prompt)

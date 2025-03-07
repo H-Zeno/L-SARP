@@ -5,8 +5,8 @@ import re
 from typing import Optional, Tuple, List, Annotated
 import json
 
-from openai import AsyncOpenAI
-from source.LostFound.src.scene_graph import SceneGraph
+from pydantic import BaseModel
+from langchain.output_parsers import PydanticOutputParser
 
 from pathlib import Path
 from dotenv import dotenv_values
@@ -29,6 +29,7 @@ from semantic_kernel.agents.strategies import (
 from semantic_kernel.functions import KernelFunctionFromPrompt
 
 from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
+from source.LostFound.src.utils import scene_graph_to_json
 
 from configs.plugin_configs import plugin_configs
 from configs.scenes_and_plugins_config import Scene
@@ -75,8 +76,16 @@ update_task_planning_prompt_template = """
             (0, 0, 0)
 
             Make sure that the plan contains the actual function calls that should be made and is as clear and concise as possible.
-            When future steps of the the plan are dependent on the outcome of previous steps, mention [DEPENDENT ON PREVIOUS STEPS] in the plan.
             """
+class Task(BaseModel):
+    """A task to be completed."""
+    task: str
+    dependent_on_outcome_of_previous_task : bool
+
+
+class TaskPlannerResponse(BaseModel):
+    """A response from the task planner agent."""
+    tasks : List[Task]
 
 
 class RobotPlanner:
@@ -85,45 +94,43 @@ class RobotPlanner:
     """
     def __init__(
         self, 
-        scene: Scene
+        scene: Scene,
+        robot_state: RobotState
 
     ) -> None:
         """
         Constructor for the RobotPlanner class that handles plugin initialization and planning.
-
-        Args:
-            task_execution_service (AIServiceClientBase): The AI service client (e.g. OpenAI) that will
-                be used by the semantic kernel for the execution of the task that have to be completed.
-            task_generation_service (AIServiceClientBase): The AI service client (e.g. OpenAI) that will
-                be used by the semantic kernel for the generation of the task that have to be completed.
-            task_execution_endpoint_settings (OpenAIChatPromptExecutionSettings): The settings for the request to the AI service.
-            task_generation_endpoint_settings (OpenAIChatPromptExecutionSettings): The settings for the request to the AI service.
-            enabled_plugins (List[str]): List of plugin names that should be enabled for the
-                current scene, e.g. ["nav", "text", "sql", "image"].
-            plugin_configs (dict): Configuration dictionary for plugins containing tuples of
-                (factory_function, arguments, kernel_name) for each plugin.
         """
         # Load settings
         self._planner_settings = dotenv_values(".env_core_planner")
 
         # Set the configurations for the retrieval plugins
-        self._enabled_retrieval_plugins = scene.retrieval_plugins
+        self.scene = scene
+        self._enabled_retrieval_plugins = self.scene.retrieval_plugins
         self._retrieval_plugins_configs = plugin_configs
-        
+
         # Create the kernel
         self.kernel = Kernel()
 
         # Create the robot state (this includes the scene graph)
-        self.robot_state = RobotState()
-        self.scene_graph = SceneGraph()
+        self.robot_state = robot_state
 
         # Planner states
         self.goal = None
         self.plan = None
+        self.replanned = False
         self.planning_chat_history = ChatHistory()
         self.task = None
         self.tasks_completed = []
         
+        # Initialize the system
+        self.setup_services()
+        # self.add_retrieval_plugins()
+        self.add_action_plugins()
+        self.add_planning_plugins()
+        self.initialize_task_planner_agent()
+        self.initialize_task_execution_agent()
+        self.initialize_goal_completion_checker_agent()
 
     def _load_config(self) -> dict:
         """
@@ -157,7 +164,8 @@ class RobotPlanner:
         """
         Adds all the planning plugins to the kernel
         """
-        self.kernel.add_plugin(PlanningPlugin(), plugin_name="planning")
+        # Register the task planning methods from this class as a plugin
+        self.kernel.add_plugin(self, plugin_name="task_planner")
 
     def setup_services(self) -> None:
         """
@@ -204,6 +212,8 @@ class RobotPlanner:
         """
         Initializes the task generation agent.
         """
+        parser = PydanticOutputParser(pydantic_object=TaskPlannerResponse)
+        model_desc = parser.get_format_instructions()
 
         # Create task generation agent with auto function calling
         task_generation_endpoint_settings = OpenAIChatPromptExecutionSettings(
@@ -217,7 +227,7 @@ class RobotPlanner:
             service_id="general_intelligence",
             kernel=self.kernel,
             name="TaskPlannerAgent",
-            instructions=TASK_PLANNER_AGENT_INSTRUCTIONS,
+            instructions=TASK_PLANNER_AGENT_INSTRUCTIONS.format(model_description=model_desc),
             execution_settings=task_generation_endpoint_settings
         )
 
@@ -300,7 +310,7 @@ class RobotPlanner:
             1. Task to be completed: {self.task}
             2. The plan generated by the {self.task_planner_agent.name}:
             3. The tasks that have been completed so far: {self.tasks_completed}
-            4. The current state of the environment (scene graph): {self.scene_graph}
+            4. The current state of the environment (scene graph): {self.robot_state.scene_graph}
 
             RESPONSE:
             {{{{$lastmessage}}}}
@@ -329,66 +339,81 @@ class RobotPlanner:
 
         return self.task_completion_group_chat
 
-
-    async def create_task_plan(self, message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> None:
-            plan_generation_prompt = create_task_planning_prompt_template.format(goal=self.goal, tasks_completed=', '.join(map(str, self.tasks_completed)), scene_graph=self.scene_graph)
-
-            plan_response, json_format_chat_history = await invoke_agent(self.task_planner_agent, message + plan_generation_prompt, chat_history=ChatHistory())
-
-            logger.info("========================================")
-            logger.info(f"Reasoning about the initial plan: {str(plan_response)}")
-            logger.info("========================================")
-
-            # Extract JSON from the response using regex
-            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*`*', plan_response, re.DOTALL)
-            if json_match:
-                try:
-                    self.plan = json.loads(json_match.group(1))
-                    self.json_format_chat_history = ChatHistory(ChatMessageContent(role="user", content="Initial plan:" + str(self.plan)))
-                    logger.info(f"Extracted plan: {json.dumps(self.plan, indent=2)}")
-                
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON from response: {e}")
-                    await self.create_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.", json_format_chat_history)
-                    
-            else:
-                logger.error("No JSON found in the response")
-                await self.create_task_plan("No JSON response was found in the response. Please try again.", json_format_chat_history)
-
-            return None
-
+    async def create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "", internal_chat_history: ChatHistory = None) -> None:
+        if internal_chat_history is None:
+            internal_chat_history = ChatHistory()
             
-    @kernel_function(description="Function to call when something happens that doesn't follow the initial plan generated by the task planning agent.")
-    async def update_task_plan(self, issue_description: Annotated[str, "Detailed description of the current explanation and what went different to the original plan"]) -> None:
-        
-        update_plan_prompt = update_task_planning_prompt_template.format(goal=self.goal, previous_plan=self.plan, issue_description=issue_description, tasks_completed=', '.join(map(str, self.tasks_completed)), planning_chat_history=self.planning_chat_history, scene_graph=self.scene_graph)
+        plan_generation_prompt = create_task_planning_prompt_template.format(goal=self.goal, tasks_completed=', '.join(map(str, self.tasks_completed)), scene_graph=scene_graph_to_json(self.robot_state.scene_graph))
 
-        updated_plan_response, json_format_chat_history = await invoke_agent(self.task_planner_agent, update_plan_prompt, chat_history=ChatHistory())
+        logger.info("========================================")
+        logger.info(f"Plan generation prompt: {plan_generation_prompt}")
+        logger.info("========================================")
+        plan_response, json_format_chat_history = await invoke_agent(self.task_planner_agent, additional_message + plan_generation_prompt, chat_history=internal_chat_history)
+
+        logger.info("========================================")
+        logger.info(f"Reasoning about the initial plan: {str(plan_response)}")
+        logger.info("========================================")
+
+        plan_json_str = str(plan_response).replace('```json', '').replace('```', '').strip()
+
+        try:
+            self.plan = json.loads(plan_json_str)
+
+            self.planning_chat_history.add_user_message("Initial plan:" + str(self.plan))
+            logger.info(f"Extracted plan: {json.dumps(self.plan, indent=2)}")
+        
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from response: {e}")
+            await self.create_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.", internal_chat_history=internal_chat_history)
+            
+        return None
+
+    @kernel_function(description="Function to call when something happens that doesn't follow the initial plan generated by the task planning agent.")
+    async def update_task_plan(self, issue_description: Annotated[str, "Detailed description of the current explanation and what went different to the original plan"], internal_chat_history: ChatHistory = None) -> None:
+        if internal_chat_history is None:
+            internal_chat_history = ChatHistory()
+            
+        self.replanned = True
+        
+        update_plan_prompt = update_task_planning_prompt_template.format(goal=self.goal, previous_plan=self.plan, issue_description=issue_description, tasks_completed=', '.join(map(str, self.tasks_completed)), planning_chat_history=self.planning_chat_history, scene_graph=scene_graph_to_json(self.robot_state.scene_graph))
+
+        updated_plan_response, json_format_chat_history = await invoke_agent(self.task_planner_agent, update_plan_prompt, chat_history=internal_chat_history)
 
         logger.info("========================================")
         logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
         logger.info("========================================")
 
-        # Extract JSON from the response using regex
-        json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*`*', updated_plan_response, re.DOTALL)
-        if json_match:
-            try:
-                self.plan = json.loads(json_match.group(1))
-                self.planning_chat_history.add_user_message("Issue description with previous plan:" + issue_description)
-                self.planning_chat_history.add_user_message("Updated plan:" + str(self.plan))
-                logger.info("========================================")
-                logger.info(f"Extracted updated plan: {json.dumps(self.plan, indent=2)}")
-                logger.info("========================================")
-            
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON from response: {e}")
-                await self.update_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.", json_format_chat_history)
-                
-        else:
-            logger.error("No JSON found in the response")
-            await self.update_task_plan("No JSON response was found in the response. Please try again.", json_format_chat_history)
+        updated_plan_json_str = str(updated_plan_response).replace('```json', '').replace('```', '').strip()
 
+        try:
+            self.plan = json.loads(updated_plan_json_str)
+            self.planning_chat_history.add_user_message("Issue description with previous plan:" + issue_description)
+            self.planning_chat_history.add_user_message("Updated plan:" + str(self.plan))
+            logger.info("========================================")
+            logger.info(f"Extracted updated plan: {json.dumps(self.plan, indent=2)}")
+            logger.info("========================================")
+        
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from response: {e}")
+            await self.update_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.", internal_chat_history=json_format_chat_history)
+                
         return None
+
+    async def set_goal(self, goal: Annotated[str, "The goal to be achieved by the robot"]) -> None:
+        """
+        Sets the goal for the robot planner and creates an initial task plan.
+        """
+        self.goal = goal
+        self.plan = None
+        self.replanned = False
+        self.planning_chat_history = ChatHistory()
+        self.tasks_completed = []
+        
+        # Create initial plan
+        await self.create_task_plan()
+        
+        logger.info(f"Goal set to: {self.goal}. Initial plan created.")
+
 
 class ApprovalTerminationStrategy(TerminationStrategy):
     """A strategy for determining when an agent should terminate."""
@@ -396,3 +421,5 @@ class ApprovalTerminationStrategy(TerminationStrategy):
     async def should_agent_terminate(self, agent, history):
         """Check if the agent should terminate."""
         return "Approved! The goal is completed!" in history[-1].content.lower()
+
+
