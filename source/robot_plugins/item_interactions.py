@@ -39,6 +39,9 @@ from planner_core.interfaces import AbstractLlmChat
 from LostFound.src.graph_nodes import LightSwitchNode, DrawerNode, ObjectNode
 from LostFound.src.scene_graph import SceneGraph
 
+from planner_core.robot_state import RobotStateSingleton
+
+robot_state = RobotStateSingleton()
 
 import logging
 from pathlib import Path
@@ -59,52 +62,56 @@ class ItemInteractionsPlugin:
 
     def _push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> str:
         
-        # Now hard code the normal of the light switch (has to be done in the scene graph)
-        light_switch_node.set_normal(np.array([-1, 0, 0]))
+        # # Now hard code the normal of the light switch (has to be done in the scene graph)
+        # light_switch_node.set_normal(np.array([-1, 0, 0]))
 
-        sem_label_lamp = next((k for k, v in scene_graph.label_mapping.items() if v == "lamp"), None)
-        lamp_nodes = [node for node in scene_graph.nodes.values() if node.sem_label == sem_label_lamp]
-        POSES_LAMPS = [Pose3D(node.centroid) for node in lamp_nodes]
-        IDS_LAMPS = [node.object_id for node in lamp_nodes]
+        # sem_label_lamp = next((k for k, v in scene_graph.label_mapping.items() if v == "lamp"), None)
+        # lamp_nodes = [node for node in scene_graph.nodes.values() if node.sem_label == sem_label_lamp]
+        # POSES_LAMPS = [Pose3D(node.centroid) for node in lamp_nodes]
+        # IDS_LAMPS = [node.object_id for node in lamp_nodes]
 
-        #################################
-        # localization of spot based on camera images and depth scans
-        #################################
-        start_time = time.time()
-        set_gripper_camera_params('640x480')
+        # #################################
+        # # localization of spot based on camera images and depth scans
+        # #################################
+        # start_time = time.time()
+        # set_gripper_camera_params('640x480')
 
-        frame_name = localize_from_images(self.config, vis_block=False)
+        # frame_name = localize_from_images(self.config, vis_block=False)
 
-        end_time_localization = time.time()
-        logging.info(f"Localization time: {end_time_localization - start_time}")
+        # end_time_localization = time.time()
+        # logging.info(f"Localization time: {end_time_localization - start_time}")
 
-        #################################
-        # Move spot to the center of the scene
-        #################################
-        move_body(POSE_CENTER, frame_name)
+        # #################################
+        # # Move spot to the center of the scene
+        # #################################
+        # move_body(POSE_CENTER, frame_name)
 
-        #################################
-        # Check lamp states pre interaction
-        #################################
-        lamp_images_pre = self.light_switch_interaction.check_lamps(POSES_LAMPS, frame_name)
+        # #################################
+        # # Check lamp states pre interaction
+        # #################################
+        # lamp_images_pre = self.light_switch_interaction.check_lamps(POSES_LAMPS, frame_name)
 
-        #################################
-        # Move body to switch
-        #################################
-        body_to_switch_start_time = time.time()
+        # #################################
+        # # Move body to switch
+        # #################################
+        # body_to_switch_start_time = time.time()
 
+        # pose = Pose3D(light_switch_node.centroid)
+        # pose.set_rot_from_direction(light_switch_node.normal)
+
+        # body_add_pose_refinement_right = Pose3D((-self.config["STAND_DISTANCE"], -0.00, -0.00))
+        # body_add_pose_refinement_right.set_rot_from_rpy((0, 0, 0), degrees=True)
+        # p_body = pose.copy() @ body_add_pose_refinement_right.copy()
+
+        # move_body(p_body.to_dimension(2), frame_name)
+        # logging.info(f"Moved body to switch")
+        
+        # body_to_switch_end_time = time.time()
+        # logging.info(f"Time to move body to switch: {body_to_switch_end_time - body_to_switch_start_time}")
+
+        # Set the pose of the light switch that we have to push
         pose = Pose3D(light_switch_node.centroid)
         pose.set_rot_from_direction(light_switch_node.normal)
-
-        body_add_pose_refinement_right = Pose3D((-self.config["STAND_DISTANCE"], -0.00, -0.00))
-        body_add_pose_refinement_right.set_rot_from_rpy((0, 0, 0), degrees=True)
-        p_body = pose.copy() @ body_add_pose_refinement_right.copy()
-
-        move_body(p_body.to_dimension(2), frame_name)
-        logging.info(f"Moved body to switch")
-        
-        body_to_switch_end_time = time.time()
-        logging.info(f"Time to move body to switch: {body_to_switch_end_time - body_to_switch_start_time}")
 
         #################################
         # Extend the arm to a neutral carrying position
@@ -112,30 +119,28 @@ class ItemInteractionsPlugin:
         carry_arm() 
 
         #################################
-        # Push light switch
-        #################################
-        push_light_switch(pose, frame_name, z_offset=True, forces=self.config["FORCES"])
-
-        #################################
         # refine handle position
         #################################
         refined_pose, refined_box, color_response = self.light_switch_interaction.get_average_refined_switch_pose(
             pose, 
-            frame_name, 
+            robot_state.frame_name, 
             self.config["REFINEMENT_X_OFFSET"],
             num_refinement_poses=self.config["NUM_REFINEMENT_POSES"],
             num_refinement_max_tries=self.config["NUM_REFINEMENTS_MAX_TRIES"],
             bounding_box_optimization=True
         )
 
-        if refined_pose is not None:
-            push_light_switch(refined_pose, frame_name, z_offset=True, forces=self.config["FORCES"])
-        else:
-            logging.warning(f"Refined pose is None for switch")
-            logging.warning(f"Pushing light switch without refinement")
-            push_light_switch(pose, frame_name, z_offset=True, forces=self.config["FORCES"])
+        # #################################
+        # # Push light switch (without affordance detection)
+        # #################################
+        # if refined_pose is not None:
+        #     push_light_switch(refined_pose, robot_state.frame_name, z_offset=True, forces=self.config["FORCES"])
+        # else:
+        #     logging.warning(f"Refined pose is None for switch")
+        #     logging.warning(f"Pushing light switch without refinement")
+        #     push_light_switch(pose, robot_state.frame_name, z_offset=True, forces=self.config["FORCES"])
 
-        stow_arm()
+        # stow_arm()
         
         #################################
         # affordance detection
@@ -150,49 +155,49 @@ class ItemInteractionsPlugin:
         switch_interaction_start_time = time.time()
 
         offsets, switch_type = self.light_switch_interaction.determine_switch_offsets_and_type(affordance_dict, self.config["GRIPPER_HEIGHT"], self.config["GRIPPER_WIDTH"])
-        self.light_switch_interaction.switch_interaction(switch_type, refined_pose, offsets, frame_name, self.config["FORCES"])
+        self.light_switch_interaction.switch_interaction(switch_type, refined_pose, offsets, robot_state.frame_name, self.config["FORCES"])
         stow_arm()
         logging.info(f"Tried interaction with switch")
         
-        #################################
-        # check lamp states post interaction
-        #################################
-        move_body(POSE_CENTER, frame_name)
-        lamp_images_post = self.light_switch_interaction.check_lamps(POSES_LAMPS, frame_name)
+        # #################################
+        # # check lamp states post interaction
+        # #################################
+        # move_body(POSE_CENTER, robot_state.frame_name)
+        # lamp_images_post = self.light_switch_interaction.check_lamps(POSES_LAMPS, robot_state.frame_name)
 
-        lamp_state_changes = self.light_switch_interaction.get_lamp_state_changes(lamp_images_pre, lamp_images_post, vis_block=self.vis_block)
+        # lamp_state_changes = self.light_switch_interaction.get_lamp_state_changes(lamp_images_pre, lamp_images_post, vis_block=self.vis_block)
 
-        #################################
-        # add lamps to the scene graph
-        #################################
-        for idx, state_change in enumerate(lamp_state_changes):
-            if state_change == 1 or state_change == -1:
-                # add lamp to switch, here the scene graph gets updated
-                light_switch_node.add_lamp(IDS_LAMPS[idx])
-            elif state_change == 0:
-                pass
+        # #################################
+        # # add lamps to the scene graph
+        # #################################
+        # for idx, state_change in enumerate(lamp_state_changes):
+        #     if state_change == 1 or state_change == -1:
+        #         # add lamp to switch, here the scene graph gets updated
+        #         light_switch_node.add_lamp(IDS_LAMPS[idx])
+        #     elif state_change == 0:
+        #         pass
         
-        if self.vis_block:
-            scene_graph.visualize(labels=True, connections=True, centroids=True)
+        # if self.vis_block:
+        #     scene_graph.visualize(labels=True, connections=True, centroids=True)
 
-        # Copy lamp images for future use
-        lamp_images_pre = lamp_images_post.copy()
+        # # Copy lamp images for future use
+        # lamp_images_pre = lamp_images_post.copy()
 
-        # Logging
-        logging.info(f"Interaction with switch finished")
-        switch_interaction_end_time = time.time()
-        logging.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
-        end_time_total = time.time()
-        logging.info(f"Total time per switch: {end_time_total - body_to_switch_start_time}")
+        # # Logging
+        # logging.info(f"Interaction with switch finished")
+        # switch_interaction_end_time = time.time()
+        # logging.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
+        # end_time_total = time.time()
+        # logging.info(f"Total time per switch: {end_time_total - body_to_switch_start_time}")
 
-        stow_arm()
+        # stow_arm()
 
         #################################
         # Move back to the center of the scene  
         #################################
-        move_body(POSE_CENTER, frame_name)
+        move_body(POSE_CENTER, robot_state.frame_name)
 
-        return frame_name
+        return robot_state.frame_name
 
     @kernel_function(description="function to call to push a certain light switch present in the scene graph", name="push_light_switch")
     def push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> None:
