@@ -48,8 +48,8 @@ logger = logging.getLogger("plugins")
 
 class NavigationPlugin:
     general_config = Config()
-    object_interaction_config = Config("light_switch_config.yaml")
-    stand_distance = object_interaction_config["stand_distance"]
+    object_interaction_config = Config("light_switch_configs")
+    stand_distance = object_interaction_config["STAND_DISTANCE"]
 
     def _move_to_object(self, object_centroid_pose, interaction_normal_of_object):
 

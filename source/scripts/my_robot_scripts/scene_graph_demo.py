@@ -177,10 +177,10 @@ class _Push_Light_Switch(ControlFunction):
             #################################
             carry_arm() 
 
-            #################################
-            # Push light switch
-            #################################
-            push_light_switch(pose, frame_name, z_offset=True, forces=FORCES)
+            # #################################
+            # # Push light switch
+            # #################################
+            # push_light_switch(pose, frame_name, z_offset=True, forces=FORCES)
 
             #################################
             # refine handle position

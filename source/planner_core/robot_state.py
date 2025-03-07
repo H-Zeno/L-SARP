@@ -46,8 +46,8 @@ from source.LostFound.src.scene_graph import SceneGraph
 
 from utils.singletons import (
     _SingletonWrapper,
-    FrameTransformerSingleton,
 )
+from robot_utils.frame_transformer import FrameTransformerSingleton
 
 frame_transformer = FrameTransformerSingleton()
 

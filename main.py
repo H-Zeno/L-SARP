@@ -12,12 +12,16 @@ import re
 
 from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
 from source.utils.recursive_config import Config
-from source.LostFound.src.utils import get_scene_graph
+from source.LostFound.src.scene_graph import get_scene_graph
 
 from configs.scenes_and_plugins_config import Scene
 from planner_core.robot_planner import RobotPlanner
 
 from semantic_kernel.contents.chat_history import ChatHistory
+
+from planner_core.robot_state import RobotStateSingleton, RobotState
+robot_state = RobotStateSingleton()
+
 
 # Set up logging - this will be the single source of logging configuration
 logging.basicConfig(
@@ -58,14 +62,13 @@ async def main():
     SCAN_DIR = os.path.join(base_path, ending)
 
     scene_graph = get_scene_graph(SCAN_DIR, drawers=True, light_switches=True)
-
-    # robot_state = RobotState(scene_graph=scene_graph)
-
-    # # Register a cleanup handler to ensure proper shutdown
-    # atexit.register(robot_state.cleanup)
-
+    
+    # Initialize the RobotState and set it in the singleton
+    robot_state_instance = RobotState(scene_graph=scene_graph)
+    robot_state.set_instance(robot_state_instance)
+    
     #region Robot Planner
-    robot_planner = RobotPlanner(scene=active_scene, scene_graph_string=scene_graph_string)
+    robot_planner = RobotPlanner(scene=active_scene)
 
     ### Online Live Instruction ###
     if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -153,7 +156,7 @@ async def main():
                     robot_planner.task = task
 
                     # Execute the task
-                    task_execution_prompt = task_completion_prompt_template.format(task=task, plan=robot_planner.plan, scene_graph=scene_graph_string)
+                    task_execution_prompt = task_completion_prompt_template.format(task=task, plan=robot_planner.plan, scene_graph=robot_state.scene_graph.scene_graph_to_json())
 
                     task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, task_execution_prompt, chat_history=ChatHistory(), debug=debug)
 
