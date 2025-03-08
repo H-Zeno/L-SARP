@@ -52,9 +52,9 @@ async def main():
         raise ValueError(f"Selected active scene '{active_scene}' (mentioned in config.yaml) not found in Scene enum")
     logger.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
 
-    path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
-    if not path_to_scene_data.exists():
-        raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
+    # path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
+    # if not path_to_scene_data.exists():
+    #     raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
     # endregion Scene Setup
 
     base_path = config.get_subpath("prescans")
@@ -86,7 +86,7 @@ async def main():
         goals_path = Path("configs/goals.json")  # Convert string to Path object
         # Create timestamp for the responses file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        responses_path = path_to_scene_data / f"responses_{timestamp}.json"
+        # responses_path = path_to_scene_data / f"responses_{timestamp}.json"
         responses = {}
         separator = "======================="
 
@@ -101,9 +101,9 @@ async def main():
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Invalid JSON format in goals file: {e}")
 
-            if responses_path.exists():
-                with responses_path.open("r") as file:
-                    responses = json.load(file)
+            # if responses_path.exists():
+            #     with responses_path.open("r") as file:
+            #         responses = json.load(file)
 
         except Exception as e:
             logger.error(f"Error loading goals: {e}")
