@@ -1,51 +1,50 @@
-import yaml
-import logging
+# Standard library imports
 import asyncio
-import re
-from typing import Optional, Tuple, List, Annotated
 import json
-
-from pydantic import BaseModel
-from langchain.output_parsers import PydanticOutputParser
-
+import logging
+import re
+import yaml
 from pathlib import Path
+from typing import Annotated, List, Optional, Tuple
+
+# Third-party imports
 from dotenv import dotenv_values
-
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel
 from semantic_kernel import Kernel
-from semantic_kernel.agents import ChatCompletionAgent, AgentGroupChat
-from semantic_kernel.agents.strategies.termination.termination_strategy import TerminationStrategy
-from semantic_kernel.services.ai_service_client_base import AIServiceClientBase
-from semantic_kernel.functions import kernel_function
-
-from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings, OpenAIChatCompletion
-
-from semantic_kernel.contents import ChatHistory, ChatMessageContent
-from semantic_kernel.functions import KernelArguments
+from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent
 from semantic_kernel.agents.strategies import (
     KernelFunctionSelectionStrategy,
     KernelFunctionTerminationStrategy,
 )
-from semantic_kernel.functions import KernelFunctionFromPrompt
+from semantic_kernel.agents.strategies.termination.termination_strategy import TerminationStrategy
+from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion, OpenAIChatPromptExecutionSettings
+from semantic_kernel.contents import ChatHistory, ChatMessageContent
+from semantic_kernel.functions import KernelArguments, KernelFunctionFromPrompt, kernel_function
+from semantic_kernel.services.ai_service_client_base import AIServiceClientBase
 
-from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
-from source.LostFound.src.utils import scene_graph_to_json
 
+# Local imports
+from configs.agent_instruction_prompts import (
+    GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
+    TASK_EXECUTION_AGENT_INSTRUCTIONS,
+    TASK_PLANNER_AGENT_INSTRUCTIONS,
+)
 from configs.plugin_configs import plugin_configs
 from configs.scenes_and_plugins_config import Scene
-from source.planner_core.robot_state import RobotState
-from configs.agent_instruction_prompts import TASK_EXECUTION_AGENT_INSTRUCTIONS, TASK_PLANNER_AGENT_INSTRUCTIONS, GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS
+from source.LostFound.src.utils import scene_graph_to_json
+from source.planner_core.robot_state import RobotStateSingleton
+from source.robot_plugins.item_interactions import ItemInteractionsPlugin
+from source.robot_plugins.navigation import NavigationPlugin
+from source.utils.agent_utils import invoke_agent, invoke_agent_group_chat
+
+# Initialize robot state singleton
+robot_state = RobotStateSingleton()
 
 # Just get the logger, configuration is handled in main.py
 logger = logging.getLogger(__name__)
 
-# Import the action plugins
-from source.robot_plugins.item_interactions import ItemInteractionsPlugin
-from source.robot_plugins.navigation import NavigationPlugin
-
-from source.planner_core.robot_state import RobotStateSingleton
-
-robot_state = RobotStateSingleton()
 
 create_task_planning_prompt_template = """
             1. Please generate a task plan to complete the following goal: {goal}

@@ -39,9 +39,12 @@ from planner_core.interfaces import AbstractLlmChat
 from LostFound.src.graph_nodes import LightSwitchNode, DrawerNode, ObjectNode
 from LostFound.src.scene_graph import SceneGraph
 
-from planner_core.robot_state import RobotStateSingleton
+from source.planner_core.robot_state import RobotStateSingleton
 
 robot_state = RobotStateSingleton()
+
+from robot_plugins.communication import CommunicationPlugin
+communication = CommunicationPlugin()
 
 import logging
 from pathlib import Path
@@ -202,5 +205,14 @@ class ItemInteractionsPlugin:
     @kernel_function(description="function to call to push a certain light switch present in the scene graph", name="push_light_switch")
     def push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> None:
         config = Config()
-        take_control_with_function(config, function=self._push_light_switch, light_switch_node=light_switch_node, scene_graph=scene_graph, body_assist=True)
+
+        communication.inform_user("The robot is about to push the light switch as position: " + str(light_switch_node.centroid))
+
+        response = communication.ask_user("Do you want to proceed with the interaction? Please reply with 'yes' or 'no'.")
+
+        if response == "yes":
+            take_control_with_function(config, function=self._push_light_switch, light_switch_node=light_switch_node, scene_graph=scene_graph, body_assist=True)
+        else:
+            communication.inform_user("The robot will not push the light switch.")
+
         logging.info("Light switch pushed")

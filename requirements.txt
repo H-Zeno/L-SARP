@@ -38,6 +38,7 @@ ultralytics==8.1.28
 clip @ git+https://github.com/openai/CLIP.git
 llama-index-core==0.12.14
 llama-index==0.12.14
+llama-index-legacy
 llama-index-llms-azure-openai==0.3.0
 llama-index-embeddings-azure-openai==0.3.0
 llama-index-multi-modal-llms-azure-openai==0.3.1
@@ -63,6 +64,7 @@ gdown
 python-dotenv>=1.0.0
 aiohttp~=3.8
 nest-asyncio~=1.6
+langchain
 
 # Mask3D client requirements
 requests>=2.25.0

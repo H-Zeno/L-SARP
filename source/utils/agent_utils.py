@@ -1,12 +1,15 @@
+# Standard library imports
 import logging
+from typing import Tuple
+
+# Third-party imports
+from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent
+from semantic_kernel.contents import ChatHistory, ChatMessageContent, ImageContent, TextContent
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
-from semantic_kernel.contents.utils.author_role import AuthorRole
-from semantic_kernel.functions.kernel_arguments import KernelArguments
 from semantic_kernel.contents.function_call_content import FunctionCallContent
 from semantic_kernel.contents.function_result_content import FunctionResultContent
-from semantic_kernel.contents import ChatHistory, ChatMessageContent, ImageContent, TextContent
-from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent
-from typing import Tuple
+from semantic_kernel.contents.utils.author_role import AuthorRole
+from semantic_kernel.functions.kernel_arguments import KernelArguments
 
 logger = logging.getLogger(__name__)
 

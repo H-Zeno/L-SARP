@@ -1,24 +1,54 @@
-import numpy as np
+# Standard library imports
 import logging
+import os
 import time
-from typing import List, Dict, Any, Optional, Tuple
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
+# Third-party imports
+import numpy as np
+from dotenv import dotenv_values
 from PIL import Image
 
-from pathlib import Path
-import os
-from dotenv import dotenv_values
-
-# Utils
-from utils.recursive_config import Config
-from utils import environment
-
-from robot_utils.video import (
-    localize_from_images, get_camera_rgbd, set_gripper_camera_params, set_gripper, relocalize,
-    frame_coordinate_from_depth_image, select_points_from_bounding_box
+# Bosdyn SDK imports
+from bosdyn import client as bosdyn_client
+from bosdyn.api import estop_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
+from bosdyn.client import math_helpers, util as bosdyn_util
+from bosdyn.client.estop import EstopClient
+from bosdyn.client.frame_helpers import (
+    BODY_FRAME_NAME, 
+    GRAV_ALIGNED_BODY_FRAME_NAME, 
+    ODOM_FRAME_NAME, 
+    VISION_FRAME_NAME, 
+    get_a_tform_b
 )
+from bosdyn.client.image import ImageClient
+from bosdyn.client.robot import Robot
+from bosdyn.client.robot_command import (
+    RobotCommandClient,
+    blocking_selfright,
+    blocking_stand,
+)
+from bosdyn.client.robot_state import RobotStateClient
+
+# Local imports
+from robot_utils.frame_transformer import FrameTransformerSingleton
+from robot_utils.video import (
+    frame_coordinate_from_depth_image,
+    get_camera_rgbd,
+    localize_from_images,
+    relocalize,
+    select_points_from_bounding_box,
+    set_gripper,
+    set_gripper_camera_params
+)
+from source.LostFound.src.scene_graph import SceneGraph
+from utils import environment
+from utils.recursive_config import Config
+from utils.singletons import _SingletonWrapper
 
 # Import Spot SDK
 from bosdyn import client as bosdyn_client
@@ -34,7 +64,6 @@ from bosdyn.client.robot_command import (
 )
 from bosdyn.client.image import ImageClient
 from bosdyn.client.robot import Robot
-from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.image import ImageClient
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.frame_helpers import VISION_FRAME_NAME, BODY_FRAME_NAME, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b
@@ -44,13 +73,26 @@ from bosdyn.client import math_helpers
 # Import scene graph
 from source.LostFound.src.scene_graph import SceneGraph
 
-from utils.singletons import (
-    _SingletonWrapper,
-)
 from robot_utils.frame_transformer import FrameTransformerSingleton
 
-frame_transformer = FrameTransformerSingleton()
+# Import singletons
+from utils.singletons import (
+    _SingletonWrapper,
+    GraphNavClientSingleton,
+    ImageClientSingleton,
+    RobotCommandClientSingleton,
+    RobotSingleton,
+    RobotStateClientSingleton,
+    WorldObjectClientSingleton,
+)
 
+frame_transformer = FrameTransformerSingleton()
+graph_nav_client = GraphNavClientSingleton()
+image_client = ImageClientSingleton()
+robot_command_client = RobotCommandClientSingleton()
+robot = RobotSingleton()
+robot_state_client = RobotStateClientSingleton()
+world_object_client = WorldObjectClientSingleton()
 
 # import threading
 # import time
@@ -101,7 +143,11 @@ class RobotState:
         self.connect_to_spot()
         self.current_room: str = "unknown"
         self.frame_name = None
+        self.scene_graph = scene_graph  # Explicitly set the scene_graph attribute
 
+        ## The equivalent of this was written for the frame_transformer class. Why is it used there?
+        # robot_state = RobotStateSingleton()
+        # robot_state.set_instance(self)
 
     def connect_to_spot(self) -> None:
         """Establish connection to the Spot robot."""
@@ -115,14 +161,13 @@ class RobotState:
         bosdyn_util.setup_logging(robot_config["verbose"])
 
         # setup robot
-        self.robot = self.sdk.create_robot(spot_env_config["wifi_default_address"])
+        global robot
+        robot.set_instance(self.sdk.create_robot(spot_env_config["wifi_default_address"]))
         environment.set_robot_password(self.config)
-        bosdyn_util.authenticate(self.robot)
+        bosdyn_util.authenticate(robot)
 
-        # Establish time sync with the robot. This kicks off a background thread to establish time sync.
-        # Time sync is required to issue commands to the robot. After starting time sync thread, block
-        # until sync is established.
-        self.robot.time_sync.wait_for_sync()
+        # Establish time sync with the robot. 
+        robot.time_sync.wait_for_sync()
 
         # Verify the robot is not estopped and that an external application has registered and holds
         # an estop endpoint.
@@ -130,7 +175,8 @@ class RobotState:
 
         # The robot state client will allow us to get the robot's state information, and construct
         # a command using frame information published by the robot.
-        self.robot_state_client = self.robot.ensure_client(RobotStateClient.default_service_name)
+        global robot_state_client
+        robot_state_client.set_instance(robot.ensure_client(RobotStateClient.default_service_name))
         
         #################################
         # localization of spot based on camera images and depth scans
@@ -169,24 +215,24 @@ class RobotState:
         """Verify the robot is not estopped"""
         # https://github.com/boston-dynamics/spot-sdk/blob/master/python/examples/arm_joint_move/arm_joint_move.py
 
-        client = self.robot.ensure_client(EstopClient.default_service_name)
+        client = robot.ensure_client(EstopClient.default_service_name)
         if client.get_status().stop_level != estop_pb2.ESTOP_LEVEL_NONE:
             error_message = (
                 "Robot is estopped. Please use an external E-Stop client, such as the "
                 "estop SDK example, to configure E-Stop."
             )
-            self.robot.logger.error(error_message)
+            robot.logger.error(error_message)
             raise EStopError(error_message)
 
     
     def _get_available_cameras(self) -> None:
         """Get a list of available cameras on the robot."""
-        if not self.robot or not self.image_client:
+        if not robot or not image_client:
             print("Robot not connected. Cannot get available cameras.")
             return
         
         try:
-            sources = self.image_client.list_image_sources()
+            sources = image_client.list_image_sources()
             self.available_cameras = [source.name for source in sources]
             print(f"Available cameras: {self.available_cameras}")
         except Exception as e:

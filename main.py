@@ -1,27 +1,27 @@
+# Standard library imports
 import asyncio
 import json
-import os
-import yaml
 import logging
 import logging.config
-from pathlib import Path
-from dotenv import dotenv_values
+import os
 from datetime import datetime
-import atexit
-import re
+from pathlib import Path
 
-from source.utils.agent_utils import invoke_agent_group_chat, invoke_agent
-from source.utils.recursive_config import Config
-from source.LostFound.src.scene_graph import get_scene_graph
-
-from configs.scenes_and_plugins_config import Scene
-from planner_core.robot_planner import RobotPlanner
-
+# Third-party imports
+import yaml
+from dotenv import dotenv_values
 from semantic_kernel.contents.chat_history import ChatHistory
 
-from planner_core.robot_state import RobotStateSingleton, RobotState
-robot_state = RobotStateSingleton()
+# Local imports
+from configs.scenes_and_plugins_config import Scene
+from source.planner_core.robot_planner import RobotPlanner
+from source.planner_core.robot_state import RobotState, RobotStateSingleton
+from source.LostFound.src.scene_graph import get_scene_graph
+from source.utils.agent_utils import invoke_agent, invoke_agent_group_chat
+from source.utils.recursive_config import Config
 
+# Initialize robot state singleton
+robot_state = RobotStateSingleton()
 
 # Set up logging - this will be the single source of logging configuration
 logging.basicConfig(
@@ -63,11 +63,9 @@ async def main():
 
     scene_graph = get_scene_graph(SCAN_DIR, drawers=True, light_switches=True)
     
-    # Initialize the RobotState and set it in the singleton
-    robot_state_instance = RobotState(scene_graph=scene_graph)
-    robot_state.set_instance(robot_state_instance)
+    # The singleton is accessible from all modules by importing RobotStateSingleton and creating a new instance
+    robot_state.set_instance(RobotState(scene_graph=scene_graph))
     
-    #region Robot Planner
     robot_planner = RobotPlanner(scene=active_scene)
 
     ### Online Live Instruction ###
@@ -167,26 +165,10 @@ async def main():
             
                     # Activate the goal completion checker agent (small quick model)
 
-
-            #     response, robot_planner_group_chat = await invoke_agent_group_chat(robot_planner_group_chat, task_completion_prompt)
-                
-            #     responses[nr] = {
-            #         "goal": goal_text,
-            #         "response": response,
-            #     }
-
-            #     with responses_path.open("w") as file:
-            #         json.dump(responses, file, indent=4)
-
-            # except Exception as e:
-            #     error_str = f"Error processing goal {goal_text}: {e}"
-            #     logger.error(error_str)
-
         logger.info("Finished processing Offline Predefined Goals")
 
     else:
         raise ValueError(f"Invalid task instruction mode: {config['robot_planner_settings']['task_instruction_mode']}")
-    #endregion Robot Planner
 
 
     # Querying the room (asking questions) should just be one plugin

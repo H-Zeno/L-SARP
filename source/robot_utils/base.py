@@ -44,7 +44,7 @@ from utils.singletons import (
     reset_singletons,
 )
 
-from planner_core.robot_state import RobotState
+from source.planner_core.robot_state import RobotState, RobotStateSingleton
 
 frame_transformer = FrameTransformerSingleton()
 graph_nav_client = GraphNavClientSingleton()
@@ -64,7 +64,6 @@ ALL_SINGLETONS = (
     robot_state_client,
     world_object_client,
 )
-
 
 class ControlFunction(typing.Protocol):
     """
@@ -108,12 +107,6 @@ def take_control_with_function(
     # Verify the estop
     verify_estop()
 
-    # Load the robot state
-    robot_state_client = general_robot_state.robot_state_client
-    robot = general_robot_state.robot
-    # image_client = general_robot_state.image_client
-
-    robot_state = robot_state_client.get_robot_state()
     lease_client = robot.ensure_client(
         bosdyn_client.lease.LeaseClient.default_service_name
     )
@@ -131,7 +124,7 @@ def take_control_with_function(
         assert robot.is_powered_on(), "Robot power on failed."
         # robot.logger.info("Robot powered on.")
 
-        battery_states = robot_state.battery_states[0]
+        battery_states = robot_state_client.get_robot_state().battery_states[0]
         percentage = battery_states.charge_percentage.value
         estimated_time = battery_states.estimated_runtime.seconds / 60
         if percentage < 20.0:

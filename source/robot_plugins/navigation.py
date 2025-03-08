@@ -36,8 +36,7 @@ from random import uniform
 # Semantic Kernel
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
-from planner_core.robot_state import RobotStateSingleton
-
+from source.planner_core.robot_state import RobotStateSingleton
 robot_state = RobotStateSingleton()
 
 import logging
