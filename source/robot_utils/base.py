@@ -44,8 +44,6 @@ from utils.singletons import (
     reset_singletons,
 )
 
-from source.planner_core.robot_state import RobotState, RobotStateSingleton
-
 frame_transformer = FrameTransformerSingleton()
 graph_nav_client = GraphNavClientSingleton()
 image_client = ImageClientSingleton()
@@ -82,7 +80,7 @@ class ControlFunction(typing.Protocol):
 
 
 def take_control_with_function(
-    general_robot_state: RobotState,
+    general_robot_state,  # Type annotation removed to avoid import
     config: Config,
     function: ControlFunction,
     *args,

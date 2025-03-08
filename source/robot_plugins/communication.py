@@ -21,10 +21,9 @@ logger = logging.getLogger(__name__)
 
 class CommunicationPlugin:
     """A plugin that can be used to communicate with the user"""
-    def __init__(self, client_id: str):
-        self.client_id = client_id
+    def __init__(self):
         self.debug = True
-        logger.info(f"CommunicationPlugin initialized for client {client_id}")
+        logger.info(f"CommunicationPlugin initialized")
     def remove_unnecessary_characters(self, text: Annotated[str, "The text to clean"]) -> str:
         # Remove repeated exclamation marks, question marks, and other symbols
         text = re.sub(r'[!]+', r'!', text)
