@@ -31,7 +31,7 @@ from configs.agent_instruction_prompts import (
     TASK_EXECUTION_AGENT_INSTRUCTIONS,
     TASK_PLANNER_AGENT_INSTRUCTIONS,
 )
-from configs.plugin_configs import plugin_configs
+# from configs.plugin_configs import plugin_configs
 from configs.scenes_and_plugins_config import Scene
 from source.LostFound.src.utils import scene_graph_to_json
 from source.planner_core.robot_state import RobotStateSingleton
@@ -108,8 +108,8 @@ class RobotPlanner:
 
         # Set the configurations for the retrieval plugins
         self.scene = scene
-        self._enabled_retrieval_plugins = self.scene.retrieval_plugins
-        self._retrieval_plugins_configs = plugin_configs
+        # self._enabled_retrieval_plugins = self.scene.retrieval_plugins
+        # self._retrieval_plugins_configs = plugin_configs
 
         # Create the kernel
         self.kernel = Kernel()
@@ -139,18 +139,18 @@ class RobotPlanner:
         with open(Path(self._planner_settings.get("PROJECT_DIR")) / 'configs' / 'config.yaml', 'r') as file:
             return yaml.safe_load(file)
 
-    def add_retrieval_plugins(self) -> None:
-        """
-        Adds all the enabled plugins to the kernel.
-        Scenes_and_plugins_config.py contains the plugin configurations for each scene.
-        """
+    # def add_retrieval_plugins(self) -> None:
+    #     """
+    #     Adds all the enabled plugins to the kernel.
+    #     Scenes_and_plugins_config.py contains the plugin configurations for each scene.
+    #     """
         
-        # Add Enabled Plugins to the kernel
-        for plugin_name in self._enabled_retrieval_plugins:
-            if plugin_name in self._retrieval_plugins_configs:
-                factory_func, args, kernel_name = self._retrieval_plugins_configs[plugin_name]
-                plugin = factory_func(*args)
-                self.kernel.add_plugin(plugin, plugin_name=kernel_name)
+    #     # Add Enabled Plugins to the kernel
+    #     for plugin_name in self._enabled_retrieval_plugins:
+    #         if plugin_name in self._retrieval_plugins_configs:
+    #             factory_func, args, kernel_name = self._retrieval_plugins_configs[plugin_name]
+    #             plugin = factory_func(*args)
+    #             self.kernel.add_plugin(plugin, plugin_name=kernel_name)
 
     def add_action_plugins(self) -> None:
         """
