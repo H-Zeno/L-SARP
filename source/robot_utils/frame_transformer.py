@@ -259,11 +259,4 @@ class FrameTransformerSingleton(_SingletonWrapper):
     For more information on singleton see utils/singletons.py
     """
 
-    # Use a string instead of the actual class to avoid circular imports
-    _type_of_class = "FrameTransformer"
-    
-    def __init__(self):
-        # Override the initialization to set the actual class type at runtime
-        from robot_utils.frame_transformer import FrameTransformer
-        self._type_of_class = FrameTransformer
-        super().__init__()
+    _type_of_class = FrameTransformer
