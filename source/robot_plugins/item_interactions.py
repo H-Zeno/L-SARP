@@ -20,7 +20,7 @@ from robot_utils.video import (
     localize_from_images, get_camera_rgbd, set_gripper_camera_params, set_gripper, relocalize,
     frame_coordinate_from_depth_image, select_points_from_bounding_box
 )
-from robot_utils.base import ControlFunction, take_control_with_function
+from robot_utils.base_LSARP import ControlFunction, take_control_with_function
 
 # =============================================================================
 # Custom Utilities
@@ -203,16 +203,16 @@ class ItemInteractionsPlugin:
         return robot_state.frame_name
 
     @kernel_function(description="function to call to push a certain light switch present in the scene graph", name="push_light_switch")
-    def push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> None:
+    async def push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> None:
         config = Config()
 
-        communication.inform_user("The robot is about to push the light switch as position: " + str(light_switch_node.centroid))
+        await communication.inform_user("The robot is about to push the light switch as position: " + str(light_switch_node.centroid))
 
-        response = communication.ask_user("Do you want to proceed with the interaction? Please reply with 'yes' or 'no'.")
+        response = await communication.ask_user("Do you want to proceed with the interaction? Please reply with 'yes' or 'no'.")
 
         if response == "yes":
             take_control_with_function(config, function=self._push_light_switch, light_switch_node=light_switch_node, scene_graph=scene_graph, body_assist=True)
         else:
-            communication.inform_user("The robot will not push the light switch.")
+            await communication.inform_user("The robot will not push the light switch.")
 
         logging.info("Light switch pushed")

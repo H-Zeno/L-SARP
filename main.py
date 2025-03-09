@@ -33,7 +33,7 @@ logging.getLogger("kernel").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Set debug level based on config or environment variable
-debug = False  # This could be moved to config
+debug = True  # This could be moved to config
 if debug:
     logging.getLogger().setLevel(logging.DEBUG)
 

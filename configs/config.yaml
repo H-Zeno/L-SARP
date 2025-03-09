@@ -27,8 +27,8 @@ pre_scanned_graphs:
   base_fiducial_id: 52
   graph_frame_name_prefix: 'filtered_fiducial_'
   floor: -0.1
-  low_res: '2025_02_02a'
-  high_res: '2025_02_02a'
+  low_res: '08_03_2025'
+  high_res: '08_03_2025'
   draw_point_clouds: false # Set to true to enable point cloud visualization in the alignment script
 
 # paths are relative from project_root_directory

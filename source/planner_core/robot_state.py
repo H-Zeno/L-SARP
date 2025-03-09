@@ -18,21 +18,6 @@ from bosdyn.api import estop_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client import math_helpers, util as bosdyn_util
 from bosdyn.client.estop import EstopClient
-from bosdyn.client.frame_helpers import (
-    BODY_FRAME_NAME, 
-    GRAV_ALIGNED_BODY_FRAME_NAME, 
-    ODOM_FRAME_NAME, 
-    VISION_FRAME_NAME, 
-    get_a_tform_b
-)
-from bosdyn.client.image import ImageClient
-from bosdyn.client.robot import Robot
-from bosdyn.client.robot_command import (
-    RobotCommandClient,
-    blocking_selfright,
-    blocking_stand,
-)
-from bosdyn.client.robot_state import RobotStateClient
 
 # Local imports
 from robot_utils.frame_transformer import FrameTransformerSingleton
@@ -48,32 +33,14 @@ from robot_utils.video import (
 from source.LostFound.src.scene_graph import SceneGraph
 from utils import environment
 from utils.recursive_config import Config
-from utils.singletons import _SingletonWrapper
 
-# Import Spot SDK
-from bosdyn import client as bosdyn_client
-from bosdyn.api import estop_pb2
-from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
-
-from bosdyn.client import util as bosdyn_util
-from bosdyn.client.estop import EstopClient
 from bosdyn.client.robot_command import (
     RobotCommandClient,
     blocking_selfright,
     blocking_stand,
 )
-from bosdyn.client.image import ImageClient
-from bosdyn.client.robot import Robot
-from bosdyn.client.image import ImageClient
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.frame_helpers import VISION_FRAME_NAME, BODY_FRAME_NAME, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b
-from bosdyn.client import math_helpers
-
-
-# Import scene graph
-from source.LostFound.src.scene_graph import SceneGraph
-
-from robot_utils.frame_transformer import FrameTransformerSingleton
 
 # Import singletons
 from utils.singletons import (
@@ -94,8 +61,6 @@ robot = RobotSingleton()
 robot_state_client = RobotStateClientSingleton()
 world_object_client = WorldObjectClientSingleton()
 
-# import threading
-# import time
 
 @dataclass
 class RobotState:
@@ -142,10 +107,9 @@ class RobotState:
 
         self.connect_to_spot()
         self.current_room: str = "unknown"
-        self.frame_name = None
         self.scene_graph = scene_graph  # Explicitly set the scene_graph attribute
 
-        ## The equivalent of this was written for the frame_transformer class. Why is it used there?
+        # # The equivalent of this was written for the frame_transformer class. Why is it used there?
         # robot_state = RobotStateSingleton()
         # robot_state.set_instance(self)
 
@@ -178,18 +142,48 @@ class RobotState:
         global robot_state_client
         robot_state_client.set_instance(robot.ensure_client(RobotStateClient.default_service_name))
         
-        #################################
-        # localization of spot based on camera images and depth scans
-        #################################
-        start_time = time.time()
-        set_gripper_camera_params('640x480')
+        global robot_command_client
+        robot_command_client.set_instance(
+            robot.ensure_client(RobotCommandClient.default_service_name)
+        )
 
-        self.frame_name = localize_from_images(self.config, vis_block=False)
+        lease_client = robot.ensure_client(
+        bosdyn_client.lease.LeaseClient.default_service_name
+        )
 
-        end_time_localization = time.time()
-        logging.info(f"Spot localization succesfull. Localization time: {end_time_localization - start_time}")
+        with bosdyn_client.lease.LeaseKeepAlive(
+            lease_client, must_acquire=True, return_at_exit=True
+        ):
 
-        logging.info("Successfully connected to Spot robot")
+            robot.power_on(timeout_sec=20)
+            assert robot.is_powered_on(), "Robot power on failed."
+            # robot.logger.info("Robot powered on.")
+
+            battery_states = robot_state_client.get_robot_state().battery_states[0]
+            percentage = battery_states.charge_percentage.value
+            estimated_time = battery_states.estimated_runtime.seconds / 60
+            if percentage < 20.0:
+                robot.logger.info(
+                    f"\033[91mCurrent battery percentage at {percentage}%.\033[0m"
+                )
+            else:
+                robot.logger.info(f"Current battery percentage at {percentage}%.")
+            robot.logger.info(f"Estimated time left {estimated_time:.2f} min.")
+
+            #################################
+            # localization of spot based on camera images and depth scans
+            #################################
+            start_time = time.time()
+            set_gripper_camera_params('640x480')
+
+            self.frame_name = localize_from_images(self.config, vis_block=False)
+            print("====================================")
+            print(f"Frame name: {self.frame_name}")
+            print("====================================")
+            end_time_localization = time.time()
+            logging.info(f"Spot localization succesfull. Localization time: {end_time_localization - start_time}")
+
+            logging.info("Successfully connected to Spot robot")
 
         # self.image_client = self.robot.ensure_client(ImageClient.default_service_name)
 
@@ -405,103 +399,7 @@ class RobotState:
         """
         self.current_room = room
     
-    def update_robot_pose(self, pose: np.ndarray) -> None:
-        """
-        Update the robot's current pose in the world.
-        
-        Args:
-            pose: 4x4 transformation matrix representing the robot's pose
-        """
-        self.robot_pose = pose
-        # After updating the pose, update which objects are in view
-        # self._update_objects_in_view()
-    
-    
-    # def format_for_prompt(self) -> str:
-    #     """
-    #     Format the robot state as a string for inclusion in a prompt to the agentic framework.
-        
-    #     Returns:
-    #         str: Formatted robot state information
-    #     """
-    #     prompt = "# ROBOT STATE\n\n"
-        
-    #     # Current task
-    #     prompt += f"## Current Task\n{self.current_task}\n\n"
-        
-    #     # Current location
-    #     prompt += f"## Current Location\nRoom: {self.current_room}\n\n"
-        
-    #     # Robot position and orientation
-    #     prompt += "## Robot Pose\n"
-    #     if self.odom_tform_body:
-    #         position = self.get_position()
-    #         orientation = self.get_orientation_euler()
-    #         prompt += f"Position (x, y, z): ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f})\n"
-    #         prompt += f"Orientation (roll, pitch, yaw): ({orientation[0]:.2f}, {orientation[1]:.2f}, {orientation[2]:.2f}) rad\n"
-    #     else:
-    #         prompt += "Pose information not available.\n"
-    #     prompt += "\n"
-        
-    #     # Action history
-    #     prompt += "## Recent Actions\n"
-    #     if self.action_history:
-    #         for i, action in enumerate(reversed(self.action_history), 1):
-    #             prompt += f"{i}. {action}\n"
-    #     else:
-    #         prompt += "No recent actions.\n"
-    #     prompt += "\n"
-        
-    #     # Objects in view
-    #     prompt += "## Objects in Field of View\n"
-    #     if self.objects_in_view and self.scene_graph:
-    #         for obj_id in self.objects_in_view:
-    #             node = self.scene_graph.nodes.get(obj_id)
-    #             if node:
-    #                 if isinstance(node, dict):  # If loaded from JSON
-    #                     label = node.get('sem_label', 'unknown')
-    #                 else:  # If using actual SceneGraph object
-    #                     label = self.scene_graph.label_mapping.get(node.sem_label, node.sem_label)
-    #                 prompt += f"- {label} (ID: {obj_id})\n"
-    #     else:
-    #         prompt += "No objects in view.\n"
-    #     prompt += "\n"
-        
-    #     # Scene graph summary
-    #     if self.scene_graph:
-    #         prompt += "## Scene Graph Summary\n"
-    #         prompt += f"Total objects: {len(self.scene_graph.nodes)}\n"
-            
-    #         # Count objects by type
-    #         object_types: Dict[str, int] = {}
-    #         for node_id, node in self.scene_graph.nodes.items():
-    #             if isinstance(node, dict):  # If loaded from JSON
-    #                 label = node.get('sem_label', 'unknown')
-    #             else:  # If using actual SceneGraph object
-    #                 label = self.scene_graph.label_mapping.get(node.sem_label, node.sem_label)
-                
-    #             object_types[label] = object_types.get(label, 0) + 1
-            
-    #         prompt += "Object types:\n"
-    #         for obj_type, count in object_types.items():
-    #             prompt += f"- {obj_type}: {count}\n"
-    #         prompt += "\n"
-        
-    #     # Available cameras
-    #     if self.available_cameras:
-    #         prompt += "## Available Cameras\n"
-    #         for camera in self.available_cameras:
-    #             prompt += f"- {camera}\n"
-    #         prompt += "\n"
-        
-    #     # Additional state information
-    #     if self.additional_state:
-    #         prompt += "## Additional State Information\n"
-    #         for key, value in self.additional_state.items():
-    #             prompt += f"- {key}: {value}\n"
-    #         prompt += "\n"
-        
-    #     return prompt
+
     
     
     # def save_current_image(self, file_path: str) -> bool:
