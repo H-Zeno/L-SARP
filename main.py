@@ -23,10 +23,12 @@ from source.utils.recursive_config import Config
 from source.robot_utils.base_LSARP import initialize_robot_connection, spot_initial_localization, power_on, safe_power_off
 
 from utils.singletons import RobotLeaseClientSingleton
+from source.robot_utils.frame_transformer import FrameTransformerSingleton
 
 # Initialize singletons
 robot_state = RobotStateSingleton()
 robot_lease_client = RobotLeaseClientSingleton()
+frame_transformer = FrameTransformerSingleton()
 
 # Set up logging - this will be the single source of logging configuration
 logging.basicConfig(
@@ -134,31 +136,19 @@ async def main():
                 logger.info(separator)
                 logger.info(goal_text)
 
-                # 1. We simply take the goal and ask the task execution agent to complete this task
-
 
                 task_completion_prompt_template = """
                 It is your job to complete the following task: {task}
                 
                 This task is part of the following plan: {plan}
 
-                You have access to the following information to reason on how to complete the task:
-                1. An up-to-date scene graph representation of the environment
-                2. The current location of the robot in the environment
-                3. A front-facing camera image of the environment
-
                 Here is the scene graph:
                 {scene_graph}
                 
-                Here is the robot's current position:
-                (0, 0, 0)
-
-                When you are stuck or something goes not as planned, please:
-                1. Call the update_task_plan function to create a new plan on how to achieve the goal
                 """
+                # Here is the robot's current position:
+                # {robot_position}
                 
-                # We need an "okay to follow plan" agent that checks the current action and gives the go-ahead
-            
                 # Set the goal and create the initial plan
                 await robot_planner.set_goal(goal)
 
@@ -170,9 +160,16 @@ async def main():
                         robot_planner.task = task
 
                         # Execute the task
-                        task_execution_prompt = task_completion_prompt_template.format(task=task, plan=robot_planner.plan, scene_graph=robot_state.scene_graph.scene_graph_to_json())
+                        task_execution_prompt = task_completion_prompt_template.format(task=task, 
+                                                                                       plan=robot_planner.plan, 
+                                                                                       scene_graph=robot_state.scene_graph.scene_graph_to_json())
+                             #                                                          robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
-                        task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, task_execution_prompt, chat_history=ChatHistory(), debug=debug)
+                        task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, 
+                                                                                                     chat_history=ChatHistory(),
+                                                                                                     input_text_message=task_execution_prompt, 
+                                                                                                     input_image_message=robot_state.get_current_image_content(),
+                                                                                                     debug=debug)
 
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned == True:

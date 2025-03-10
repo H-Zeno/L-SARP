@@ -29,24 +29,41 @@ def _write_content(content: ChatMessageContent, debug: bool = False) -> None:
 
 async def invoke_agent(
     agent: ChatCompletionAgent,
-    input: str,
     chat_history: ChatHistory,
+    input_text_message: str,
+    input_image_message: ImageContent = None,
     save_to_history: bool = True,
     debug: bool = False
     ) -> Tuple[ChatMessageContent, ChatHistory]:
     """Invoke the agent with the user input."""
     if debug:
-        logger.debug(f"# {AuthorRole.USER}: '{input}'")
-    if save_to_history:
-        chat_history.add_user_message(input)
+        logger.debug(f"# {AuthorRole.USER}: '{input_text_message}'")
+    
+    if chat_history is None:
+        raise ValueError("chat_history cannot be None")
+
+    if save_to_history == False:
+        init_history = chat_history
+
+    if input_image_message is not None:
+        chat_history.add_message(
+            ChatMessageContent(role=AuthorRole.USER, items=[TextContent(text=input_text_message), input_image_message])
+        )
+    else:
+        chat_history.add_message(
+            ChatMessageContent(role=AuthorRole.USER, content=input_text_message)
+        )
 
     async for content in agent.invoke(chat_history):
         if not any(isinstance(item, (FunctionCallContent, FunctionResultContent)) for item in content.items):
-            if save_to_history:
-                if debug:
-                    logger.debug(f"# This text is now being saved to the chat history: '{content.content}'")
-                chat_history.add_message(content)
+            if debug:
+                logger.debug(f"# This text is now being saved to the chat history: '{content.content}'")
+            chat_history.add_message(content)
         _write_content(content)
+
+    if save_to_history == False:
+        chat_history = init_history
+
     return content.content, chat_history
 
 
@@ -72,15 +89,17 @@ async def invoke_agent_group_chat(
     if debug:
         logger.debug(f"# {AuthorRole.USER}: '{input_text_message}'")
     
-    if save_to_history:
-        if input_image_message is not None:
-            await group_chat.add_chat_message(
-                ChatMessageContent(role=AuthorRole.USER, items=[TextContent(text=input_text_message), input_image_message])
-            )
-        else:
-            await group_chat.add_chat_message(
-                ChatMessageContent(role=AuthorRole.USER, content=input_text_message)
-            )
+    if save_to_history == False:
+        init_hitory = group_chat.history
+
+    if input_image_message is not None:
+        await group_chat.add_chat_message(
+            ChatMessageContent(role=AuthorRole.USER, items=[TextContent(text=input_text_message), input_image_message])
+        )
+    else:
+        await group_chat.add_chat_message(
+            ChatMessageContent(role=AuthorRole.USER, content=input_text_message)
+        )
         
     response = ""
     async for content in group_chat.invoke():
@@ -90,10 +109,12 @@ async def invoke_agent_group_chat(
 
     if debug:
         logger.debug(f"### DEBUG: Group chat response: {response}")
+    
+    await group_chat.add_chat_message(
+        ChatMessageContent(role=AuthorRole.ASSISTANT, content=response)
+    )
 
-    if save_to_history:
-        await group_chat.add_chat_message(
-            ChatMessageContent(role=AuthorRole.ASSISTANT, content=response)
-        )
+    if save_to_history == False:
+        group_chat.history = init_hitory
 
     return response, group_chat

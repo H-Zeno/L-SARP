@@ -1,6 +1,7 @@
 # Standard library imports
 import logging
 from pathlib import Path
+import tempfile
 import time
 from dataclasses import dataclass, field
 from typing import Optional, Union
@@ -22,6 +23,8 @@ from bosdyn.client.robot_command import (
 )
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.frame_helpers import VISION_FRAME_NAME, BODY_FRAME_NAME, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b
+
+from semantic_kernel.contents import ImageContent
 
 # Utils
 from robot_utils.frame_transformer import FrameTransformerSingleton
@@ -126,6 +129,20 @@ class RobotState:
 
         image = Image.fromarray(self.image_state)
         image.save(save_path)
+
+    def get_current_image_content(self) -> ImageContent:
+        """Converts the image_state to an ImageContent instance."""
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
+            temp_path = temp_file.name
+            image = Image.fromarray(self.image_state)
+            image.save(temp_path)
+        
+        image_content = ImageContent.from_image_file(temp_path)
+        
+        # Optionally, delete the temporary file
+        Path(temp_path).unlink()
+        
+        return image_content
 
     
     def _get_available_cameras(self) -> None:
