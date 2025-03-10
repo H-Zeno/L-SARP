@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 import typing
+import logging
 
 from bosdyn import client as bosdyn_client
 from bosdyn.api import estop_pb2
@@ -28,8 +29,13 @@ from bosdyn.client.image import ImageClient
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client import Sdk
 
+from utils import environment
 from robot_utils.basic_movements import move_body
 from robot_utils.frame_transformer import FrameTransformerSingleton
+from robot_utils.video import (
+    localize_from_images,
+    set_gripper_camera_params
+)
 
 from utils.coordinates import Pose3D
 from utils.logger import LoggerSingleton, TimedFileLogger
@@ -40,9 +46,11 @@ from utils.singletons import (
     RobotCommandClientSingleton,
     RobotSingleton,
     RobotStateClientSingleton,
+    RobotLeaseClientSingleton,
     WorldObjectClientSingleton,
     reset_singletons,
 )
+from source.planner_core.robot_state import RobotStateSingleton
 
 frame_transformer = FrameTransformerSingleton()
 graph_nav_client = GraphNavClientSingleton()
@@ -50,8 +58,12 @@ image_client = ImageClientSingleton()
 robot_command_client = RobotCommandClientSingleton()
 robot = RobotSingleton()
 robot_state_client = RobotStateClientSingleton()
+robot_lease_client = RobotLeaseClientSingleton()
 world_object_client = WorldObjectClientSingleton()
 logger = LoggerSingleton()
+
+robot_state = RobotStateSingleton()
+
 
 ALL_SINGLETONS = (
     frame_transformer,
@@ -60,8 +72,11 @@ ALL_SINGLETONS = (
     robot_command_client,
     robot,
     robot_state_client,
+    robot_lease_client,
     world_object_client,
 )
+
+config = Config()
 
 class ControlFunction(typing.Protocol):
     """
@@ -82,10 +97,6 @@ def take_control_with_function(
     config: Config,
     function: ControlFunction,
     *args,
-    stand: bool = True,
-    power_off: bool = True,
-    body_assist: bool = False,
-    return_to_start: bool = True,
     **kwargs,
 ):
     """
@@ -103,86 +114,120 @@ def take_control_with_function(
     # Verify the estop
     verify_estop()
 
-    lease_client = robot.ensure_client(
-        bosdyn_client.lease.LeaseClient.default_service_name
+    # if stand:
+    #     # Here, we want the robot so self-right, otherwise it cannot stand
+    #     # robot.logger.info("Commanding robot to self-right.")
+    #     blocking_selfright(robot_command_client)
+    #     # robot.logger.info("Self-righted")
+
+    #     # Tell the robot to stand up. The command service is used to issue commands to a robot.
+    #     # The set of valid commands for a robot depends on hardware configuration. See
+    #     # RobotCommandBuilder for more detailed examples on command building. The robot
+    #     # command service requires timesync between the robot and the client.
+    #     # robot.logger.info("Commanding robot to stand...")
+
+    #     if body_assist:
+    #         body_control = spot_command_pb2.BodyControlParams(
+    #             body_assist_for_manipulation=spot_command_pb2.BodyControlParams.BodyAssistForManipulation(
+    #                 enable_hip_height_assist=True, enable_body_yaw_assist=True
+    #             )
+    #         )
+    #         params = spot_command_pb2.MobilityParams(body_control=body_control)
+    #     else:
+    #         params = None
+    #     blocking_stand(robot_command_client, timeout_sec=10, params=params)
+    #     # robot.logger.info("Robot standing.")
+    #     time.sleep(3)
+
+    # Execute the specific control function
+    return_values = function(
+        config,
+        *args,
+        **kwargs,
     )
 
-    with bosdyn_client.lease.LeaseKeepAlive(
-        lease_client, must_acquire=True, return_at_exit=True
-    ):
-        # This allows us to lease the robot, and in here we actually do the commands
+def initialize_robot_connection():
+    """ 1. Generate a Robot object
+        2. Authentication and time sync
+        3. Instantiates the robot state client, robot command client and the lease client
+        4. Verifies the estop
+    """
+    spot_env_config = environment.get_environment_config(config, ["spot"])
+    robot_config = config["robot_parameters"]
+    sdk = bosdyn_client.create_standard_sdk("understanding-spot")
 
-        # Now, we are ready to power on the robot. This call will block until the power
-        # is on. Commands would fail if this did not happen. We can also check that the robot is
-        # powered at any point.
-        # robot.logger.info("Powering on robot... This may take several seconds.")
-        robot.power_on(timeout_sec=20)
-        assert robot.is_powered_on(), "Robot power on failed."
-        # robot.logger.info("Robot powered on.")
+    # setup logging
+    bosdyn_util.setup_logging(robot_config["verbose"])
 
-        battery_states = robot_state_client.get_robot_state().battery_states[0]
-        percentage = battery_states.charge_percentage.value
-        estimated_time = battery_states.estimated_runtime.seconds / 60
-        if percentage < 20.0:
-            robot.logger.info(
-                f"\033[91mCurrent battery percentage at {percentage}%.\033[0m"
-            )
-        else:
-            robot.logger.info(f"Current battery percentage at {percentage}%.")
-        robot.logger.info(f"Estimated time left {estimated_time:.2f} min.")
+    # setup robot
+    global robot
+    robot.set_instance(sdk.create_robot(spot_env_config["wifi_default_address"]))
+
+    environment.set_robot_password(config)
+    bosdyn_util.authenticate(robot)
+
+    # Establish time sync with the robot. 
+    robot.time_sync.wait_for_sync()
+
+    # The robot state client will allow us to get the robot's state information, and construct
+    # a command using frame information published by the robot.
+    global robot_state_client
+    robot_state_client.set_instance(robot.ensure_client(RobotStateClient.default_service_name))
+    
+    global robot_command_client
+    robot_command_client.set_instance(
+        robot.ensure_client(RobotCommandClient.default_service_name)
+    )
+    global lease_client
+    robot_lease_client.set_instance(robot.ensure_client(
+    bosdyn_client.lease.LeaseClient.default_service_name
+    ))
+
+    verify_estop()
 
 
-        if stand:
-            # Here, we want the robot so self-right, otherwise it cannot stand
-            # robot.logger.info("Commanding robot to self-right.")
-            blocking_selfright(robot_command_client)
-            # robot.logger.info("Self-righted")
+def spot_initial_localization() -> None:
+    """Initial localization of the spot robot in the frame (relative to the fiducial)
+    using the camera images and depth scans."""
+    
+    #################################
+    # localization of spot based on camera images and depth scans
+    #################################
+    start_time = time.time()
+    set_gripper_camera_params('640x480')
 
-            # Tell the robot to stand up. The command service is used to issue commands to a robot.
-            # The set of valid commands for a robot depends on hardware configuration. See
-            # RobotCommandBuilder for more detailed examples on command building. The robot
-            # command service requires timesync between the robot and the client.
-            # robot.logger.info("Commanding robot to stand...")
+    robot_state.frame_name = localize_from_images(config, vis_block=False) # localize from images instantiates the image client
+    print("====================================")
+    print(f"Frame name: {robot_state.frame_name}")
+    print("====================================")
+    end_time_localization = time.time()
+    logging.info(f"Spot localization succesfull. Localization time: {end_time_localization - start_time}")
 
-            if body_assist:
-                body_control = spot_command_pb2.BodyControlParams(
-                    body_assist_for_manipulation=spot_command_pb2.BodyControlParams.BodyAssistForManipulation(
-                        enable_hip_height_assist=True, enable_body_yaw_assist=True
-                    )
-                )
-                params = spot_command_pb2.MobilityParams(body_control=body_control)
-            else:
-                params = None
-            blocking_stand(robot_command_client, timeout_sec=10, params=params)
-            # robot.logger.info("Robot standing.")
-            time.sleep(3)
 
-        # Execute the specific control function
-        return_values = function(
-            config,
-            *args,
-            **kwargs,
+def power_on(): 
+    """Power on the robot."""
+    robot.power_on(timeout_sec=20)
+    assert robot.is_powered_on(), "Robot power on failed."
+    robot.logger.info("Robot powered on.")
+
+    battery_states = robot_state_client.get_robot_state().battery_states[0]
+    percentage = battery_states.charge_percentage.value
+    estimated_time = battery_states.estimated_runtime.seconds / 60
+    if percentage < 20.0:
+        robot.logger.info(
+            f"\033[91mCurrent battery percentage at {percentage}%.\033[0m"
         )
+    else:
+        robot.logger.info(f"Current battery percentage at {percentage}%.")
+    robot.logger.info(f"Estimated time left {estimated_time:.2f} min.")
 
-        if return_to_start and return_values is not None:
-            logger.log("Returning to start")
-            frame_name = return_values
-            return_pose = Pose3D((1.5, -0.1, 0))
-            return_pose.set_rot_from_rpy((0, 0, 180), degrees=True)
-            move_body(
-                pose=return_pose.to_dimension(2),
-                frame_name=frame_name,
-            )
 
-        logger.log("Fin.")
-        # Power the robot off. By specifying "cut_immediately=False", a safe power off command
-        # is issued to the robot. This will attempt to sit the robot before powering off.
-        if power_off:
-            robot.power_off(cut_immediately=False, timeout_sec=20)
-            assert not robot.is_powered_on(), "Robot power off failed."
-            robot.logger.info("Robot safely powered off.")
-
-        reset_singletons(ALL_SINGLETONS)
+def safe_power_off():
+    """Sit and power off robot """
+    robot.logger.info('Powering off robot...')
+    robot.power_off(cut_immediately=False, timeout_sec=20)
+    assert not robot.is_powered_on(), 'Robot power off failed.'
+    robot.logger.info('Robot safely powered off.')
 
 
 def verify_estop():
@@ -203,3 +248,5 @@ class EStopError(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
+        

@@ -88,6 +88,10 @@ class RobotStateClientSingleton(_SingletonWrapper):
     _type_of_class = bosdyn.client.robot_state.RobotStateClient
 
 
+class RobotLeaseClientSingleton(_SingletonWrapper):
+    _type_of_class = bosdyn.client.lease.LeaseClient
+
+
 class WorldObjectClientSingleton(_SingletonWrapper):
     _type_of_class = bosdyn.client.world_object.WorldObjectClient
 
