@@ -78,10 +78,10 @@ Update the configuration file (`configs/config.yaml`):
 
 ```bash
 # Make it executable (only need to do this once)
-chmod +x setup_scripts/allign_pointclouds.sh
+chmod +x setup_scripts/align_pointclouds.sh
 
 # Run the script
-./setup_scripts/allign_pointclouds.sh
+./setup_scripts/align_pointclouds.sh
 ```
 
 The script will:
