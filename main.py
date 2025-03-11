@@ -53,7 +53,7 @@ config = Config()
 async def main():
   
     # region Scene Setup
-    active_scene_name = config["robot_planner_settings"]["active_scene"]
+    active_scene_name = config["robot_planner_settings"]["active_scene"] 
     active_scene = Scene[active_scene_name]
     if active_scene not in Scene:
         raise ValueError(f"Selected active scene '{active_scene}' (mentioned in config.yaml) not found in Scene enum")

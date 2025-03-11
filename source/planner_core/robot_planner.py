@@ -1,16 +1,19 @@
 # Standard library imports
 import asyncio
+from datetime import datetime
 import json
 import logging
 import re
+from openai import AsyncOpenAI
+from utils.recursive_config import Config
 import yaml
 from pathlib import Path
-from typing import Annotated, List, Optional, Tuple
+from typing import Annotated, Dict, List, Optional, Tuple
 
 # Third-party imports
 from dotenv import dotenv_values
 from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from semantic_kernel import Kernel
 from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent
 from semantic_kernel.agents.strategies import (
@@ -30,6 +33,8 @@ from configs.agent_instruction_prompts import (
     GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
     TASK_EXECUTION_AGENT_INSTRUCTIONS,
     TASK_PLANNER_AGENT_INSTRUCTIONS,
+    CREATE_TASK_PLANNER_PROMPT_TEMPLATE,
+    UPDATE_TASK_PLANNER_PROMPT_TEMPLATE,
 )
 # from configs.plugin_configs import plugin_configs
 from configs.scenes_and_plugins_config import Scene
@@ -37,61 +42,37 @@ from source.LostFound.src.utils import scene_graph_to_json
 from source.planner_core.robot_state import RobotStateSingleton
 from source.robot_plugins.item_interactions import ItemInteractionsPlugin
 from source.robot_plugins.navigation import NavigationPlugin
+from source.robot_plugins.inspection import InspectionPlugin
 from source.utils.agent_utils import invoke_agent, invoke_agent_group_chat
-from robot_utils.frame_transformer import FrameTransformerSingleton
+# from robot_utils.frame_transformer import FrameTransformerSingleton
 
 # Initialize robot state singleton
 robot_state = RobotStateSingleton()
-frame_transformer = FrameTransformerSingleton()
+# frame_transformer = FrameTransformerSingleton()
+
+config = Config()
+
 
 # Just get the logger, configuration is handled in main.py
 logger = logging.getLogger(__name__)
 
+class SceneGraphObject(BaseModel):
+    """A node in the scene graph."""
+    object_id: int
+    sem_label: str
+    centroid: List[float]
+    movable: bool
 
-create_task_planning_prompt_template = """
-            1. Please generate a task plan to complete the following goal: {goal}
-
-            2. Here is the scene graph:
-            {scene_graph}
-
-            3. Here is the robot's current position:
-            {robot_position}
-
-            Make sure that the plan contains the actual function calls that should be made and is as clear and concise as possible.
-            """
-
-update_task_planning_prompt_template = """
-            1. There was an issue with the previous generated plan to achieve the following goal: {goal}
-
-            2. This was the previous plan: {previous_plan}
-
-            3.  This is the current description of the issue from the task execution agent:
-            {issue_description}
-            
-            4. These are the tasks that have been completed so far:
-            {tasks_completed}
-
-            5. Here is the history of the past plans that have been generated to achiev the goal: {planning_chat_history}
-            
-            6. Here is the scene graph:
-            {scene_graph}
-
-            7. Here is the robot's current position:
-            {robot_position}
-
-            Make sure that the plan contains the actual function calls that should be made and is as clear and concise as possible.
-            """
-
-class Task(BaseModel):
+class TaskResponse(BaseModel):
     """A task to be completed."""
-    task: str
-    dependent_on_outcome_of_previous_task : bool
-
+    task_description: str = Field(description="A clear description of the task to be completed.")
+    reasoning: str = Field(description="A concise reasoning behind the task, especially answering the 'why?' question.")
+    function_calls_involved: List[str] = Field(description="A list of function calls involved in completing the task, including their arguments.")
+    relevant_objects: List[SceneGraphObject] = Field(description="A list of relevant objects from the scene graph that the robot could interact with to complete the task.")
 
 class TaskPlannerResponse(BaseModel):
     """A response from the task planner agent."""
-    tasks : List[Task]
-
+    tasks : List[TaskResponse]
 
 class RobotPlanner:
     """
@@ -136,14 +117,6 @@ class RobotPlanner:
         self.initialize_task_execution_agent()
         self.initialize_goal_completion_checker_agent()
 
-    def _load_config(self) -> dict:
-        """
-        Load configuration from config.yaml file.
-        
-        """
-        with open(Path(self._planner_settings.get("PROJECT_DIR")) / 'configs' / 'config.yaml', 'r') as file:
-            return yaml.safe_load(file)
-
     # def add_retrieval_plugins(self) -> None:
     #     """
     #     Adds all the enabled plugins to the kernel.
@@ -163,6 +136,7 @@ class RobotPlanner:
         """
         self.kernel.add_plugin(ItemInteractionsPlugin(), plugin_name="item_interactions")
         self.kernel.add_plugin(NavigationPlugin(), plugin_name="navigation")
+        self.kernel.add_plugin(InspectionPlugin(), plugin_name="object_inspection")
 
     def add_planning_plugins(self) -> None:
         """
@@ -177,7 +151,7 @@ class RobotPlanner:
         Configures both the main GPT-4 model and the auxiliary reasoning model.
         """
 
-        # Set up highly intelligent OpenAI model for answering question
+        # General Multimodal Intelligence model (GPT4o)
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="general_intelligence",
             api_key=self._planner_settings.get("OPENAI_API_KEY"),
@@ -189,23 +163,27 @@ class RobotPlanner:
         #     api_key=dotenv_values().get("GEMINI_API_KEY"),
         #     gemini_model_id="gemini-2.0-flash"))
 
-        # # Set Up Reasoning Model for the analysis of the experiences to requirements matching
-        # self.kernel.add_service(OpenAIChatCompletion(
-        #     service_id="opneai_reasoning_model",
-        #     api_key=self._planner_settings.get("OPENAI_API_KEY"),
-        #     ai_model_id="gpt-4o-2024-11-20")) # will be replaced by o3 mini in the future!
+        # Reasoning models
+        self.kernel.add_service(OpenAIChatCompletion(
+            service_id="o3-mini",
+            api_key=self._planner_settings.get("OPENAI_API_KEY"),
+            ai_model_id="o3-mini-2025-01-31"))
         
-        # self.kernel.add_service(OpenAIChatCompletion(
-        #     service_id="deepseek-r1",
-        #     ai_model_id="deepseek-ai/deepseek-r1",
-        #     async_client=AsyncOpenAI(
-        #         api_key=self._planner_settings.get("DEEPSEEK_API_KEY"),
-        #         base_url="https://integrate.api.nvidia.com/v1"
-        #     ),
-            
-        # ))
+        self.kernel.add_service(OpenAIChatCompletion( 
+            service_id="o1",
+            api_key=self._planner_settings.get("OPENAI_API_KEY"),
+            ai_model_id="o1-2024-12-17"))
+        
+        self.kernel.add_service(OpenAIChatCompletion(
+            service_id="deepseek-r1",
+            ai_model_id="deepseek-ai/deepseek-r1",
+            async_client=AsyncOpenAI(
+                api_key=self._planner_settings.get("DEEPSEEK_API_KEY"),
+                base_url="https://integrate.api.nvidia.com/v1"
+            )
+        ))
 
-        # Set Up small and cheap model for the processing of certain user responses
+        # Small and cheap model for the processing of certain user responses
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="small_cheap_model",
             api_key=self._planner_settings.get("OPENAI_API_KEY"),
@@ -228,7 +206,7 @@ class RobotPlanner:
             function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
         )
         self.task_planner_agent = ChatCompletionAgent(
-            service_id="general_intelligence",
+            service_id="deepseek-r1",
             kernel=self.kernel,
             name="TaskPlannerAgent",
             instructions=TASK_PLANNER_AGENT_INSTRUCTIONS.format(model_description=model_desc),
@@ -343,7 +321,7 @@ class RobotPlanner:
 
     #     return self.task_completion_group_chat
 
-    async def create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> None:
+    async def _create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> None:
         # Check if json_format_chat_history exists
 
 
@@ -351,9 +329,10 @@ class RobotPlanner:
             logger.info("Initializing json_format_chat_history as it is None")
             self.json_format_chat_history = ChatHistory()
             
-        plan_generation_prompt = create_task_planning_prompt_template.format(goal=self.goal, 
+        plan_generation_prompt = CREATE_TASK_PLANNER_PROMPT_TEMPLATE.format(goal=self.goal, 
                                                                              scene_graph=scene_graph_to_json(robot_state.scene_graph), 
-                                                                             robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+                                                                             robot_position=str("(0,0,0)"))
+        # frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
         logger.info("========================================")
         logger.info(f"Plan generation prompt: {plan_generation_prompt}")
@@ -379,10 +358,11 @@ class RobotPlanner:
             self.plan = json.loads(plan_json_str)
             self.planning_chat_history.add_user_message("Initial plan:" + str(self.plan))
             logger.info(f"Initial plan: {json.dumps(self.plan, indent=2)}")
-        
+
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from response: {e}")
-            await self.create_task_plan(additional_message="Failed to parse JSON from response with error: " + str(e) + ". Please try again.")
+            await self._create_task_plan(additional_message="Failed to parse JSON from response with error: " + str(e) + ". Please try again.")
         
         self.json_format_chat_history = None # Reset the chat history
         return None
@@ -394,13 +374,14 @@ class RobotPlanner:
             
         self.replanned = True
         
-        update_plan_prompt = update_task_planning_prompt_template.format(goal=self.goal,
+        update_plan_prompt = UPDATE_TASK_PLANNER_PROMPT_TEMPLATE.format(goal=self.goal,
                                                                         previous_plan=self.plan,
                                                                         issue_description=issue_description, 
                                                                         tasks_completed=', '.join(map(str, self.tasks_completed)), 
                                                                         planning_chat_history=self.planning_chat_history, 
                                                                         scene_graph=scene_graph_to_json(robot_state.scene_graph),
-                                                                        robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+                                                                        robot_position=str("(0,0,0)"))
+        # robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
         updated_plan_response, self.json_format_chat_history = await invoke_agent(agent=self.task_planner_agent, 
                                                                                   chat_history=self.json_format_chat_history,
@@ -428,7 +409,7 @@ class RobotPlanner:
                 
         return None
 
-    async def set_goal(self, goal: Annotated[str, "The goal to be achieved by the robot"]) -> None:
+    async def create_task_plan_from_goal(self, goal: Annotated[str, "The goal to be achieved by the robot"]) -> Dict:
         """
         Sets the goal for the robot planner and creates an initial task plan.
         """
@@ -439,9 +420,11 @@ class RobotPlanner:
         self.tasks_completed = []
         
         # Create initial plan
-        await self.create_task_plan()
+        await self._create_task_plan()
         
         logger.info(f"Goal set to: {self.goal}. Initial plan created.")
+
+        return self.plan
 
 
 class ApprovalTerminationStrategy(TerminationStrategy):

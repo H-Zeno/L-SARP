@@ -10,7 +10,7 @@ At the bottom of the script call take_control_with_function(f: ControlFunction, 
 from __future__ import annotations
 
 import time
-import typing
+from typing import Optional
 import logging
 
 from bosdyn import client as bosdyn_client
@@ -33,6 +33,9 @@ from utils import environment
 from robot_utils.basic_movements import move_body
 from robot_utils.frame_transformer import FrameTransformerSingleton
 from robot_utils.video import (
+    get_d_pictures,
+    get_greyscale_pictures,
+    get_rgb_pictures,
     localize_from_images,
     set_gripper_camera_params
 )
@@ -250,3 +253,23 @@ class EStopError(Exception):
         super().__init__(self.message)
 
         
+def update_image_state(image_source: Optional[str] = None) -> None:
+    """Updates the image that the planning framework has access to."""
+
+    if image_source is None:
+        image_source = robot_state.default_image_source
+    
+    if image_source in robot_state.hand_image_sources:
+        robot_state.image_state = get_rgb_pictures(image_sources=[image_source], gripper_open=True)[0]
+    else: 
+        robot_state.image_state = get_greyscale_pictures(image_sources=[image_source], gripper_open=False)[0]
+
+
+def update_depth_image_state(image_source: Optional[str] = None) -> None:
+    if image_source is None:
+        image_source = robot_state.default_image_source
+    
+    if image_source in robot_state.hand_image_sources:
+        robot_state.depth_image_state = get_d_pictures(image_sources=[image_source], gripper_open=True)[0]
+    else:
+        robot_state.depth_image_state = get_d_pictures(image_sources=[image_source], gripper_open=False)[0]

@@ -27,19 +27,6 @@ from bosdyn.client.frame_helpers import VISION_FRAME_NAME, BODY_FRAME_NAME, ODOM
 from semantic_kernel.contents import ImageContent
 
 # Utils
-from robot_utils.frame_transformer import FrameTransformerSingleton
-from robot_utils.video import (
-    frame_coordinate_from_depth_image,
-    get_camera_rgbd,
-    localize_from_images,
-    get_rgb_pictures,
-    get_greyscale_pictures,
-    get_d_pictures,
-    relocalize,
-    select_points_from_bounding_box,
-    set_gripper,
-    set_gripper_camera_params
-)
 from utils import environment
 from utils.recursive_config import Config
 
@@ -55,7 +42,6 @@ from utils.singletons import (
     WorldObjectClientSingleton,
 )
 
-frame_transformer = FrameTransformerSingleton()
 graph_nav_client = GraphNavClientSingleton()
 image_client = ImageClientSingleton()
 robot_command_client = RobotCommandClientSingleton()
@@ -96,36 +82,16 @@ class RobotState:
         self.default_image_source = "frontleft_fisheye_image"
         self.hand_image_sources = ['hand_color_image', 'hand_color_in_hand_depth_frame', 'hand_depth', 'hand_depth_in_hand_color_frame', 'hand_image']
 
-        # Initialize image state
-        self.update_image_state()
-        self.save_image_state(image_description="initial_image")
+        # Initialize image and depth image states
+        self.image_state = None
+        self.depth_image_state = None
+
+        # # The image state gets updated in the main function
+        # self.save_image_state(image_description="initial_image")
         
         self.scene_graph = scene_graph  # Explicitly set the scene_graph attribute
         self.current_room: str = "unknown" # Can be loaded from the scene configuration file
         
-        # # The equivalent of this was written for the frame_transformer class. Why is it used there?
-        # robot_state = RobotStateSingleton()
-        # robot_state.set_instance(self)
-   
-    def update_image_state(self, image_source: Optional[str] = None) -> None:
-        """Updates the image that the planning framework has access to."""
-
-        if image_source is None:
-            image_source = self.default_image_source
-        
-        if image_source in self.hand_image_sources:
-            self.image_state = get_rgb_pictures(image_sources=[image_source], gripper_open=True)[0]
-        else: 
-            self.image_state = get_greyscale_pictures(image_sources=[image_source], gripper_open=False)[0]
-
-    def update_depth_image_state(self, image_source: Optional[str] = None) -> None:
-        if image_source is None:
-            image_source = self.default_image_source
-        
-        if image_source in self.hand_image_sources:
-            self.depth_image_state = get_d_pictures(image_sources=[image_source], gripper_open=True)[0]
-        else:
-            self.depth_image_state = get_d_pictures(image_sources=[image_source], gripper_open=False)[0]
 
     def save_image_state(self, image_description: Optional[str] = None) -> None:
         save_dir = Path(self.config["robot_planner_settings"]["path_to_scene_data"]) / self.config["robot_planner_settings"]["active_scene"] / "images"
@@ -155,6 +121,11 @@ class RobotState:
 
     def get_current_image_content(self) -> ImageContent:
         """Converts the image_state to an ImageContent instance."""
+
+        if not self.image_state:
+            print("No image state available.")
+            return None
+        
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
             temp_path = temp_file.name
             image = Image.fromarray(self.image_state[0])

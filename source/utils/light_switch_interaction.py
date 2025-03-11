@@ -17,6 +17,8 @@ from robot_utils.advanced_movement import push_light_switch, turn_light_switch
 from utils.coordinates import Pose3D, Pose2D, average_pose3Ds
 from robot_utils.basic_movements import carry_arm, stow_arm, move_arm, gaze
 from robot_utils.video import get_camera_rgbd
+
+
 from utils.pose_utils import calculate_light_switch_poses
 from utils.bounding_box_refinement import refine_bounding_box
 from utils.affordance_detection_light_switch import compute_advanced_affordance_VLM_GPT4, check_lamp_state
