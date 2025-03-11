@@ -61,7 +61,7 @@ class NavigationPlugin:
             interaction_normal_of_object: np.ndarray,
             *args,
             **kwargs,
-        ) -> str:
+        ) -> None:
             
             body_to_object_start_time = time.time()
 
@@ -70,10 +70,13 @@ class NavigationPlugin:
             #################################
             pose = Pose3D(object_centroid_pose)
 
+            # Rotate the pose to the interaction normal of the object
             pose.set_rot_from_direction(interaction_normal_of_object)
-            body_add_pose_refinement_right = Pose3D((-object_interaction_config["STAND_DISTANCE"], -0.00, -0.00))
-            body_add_pose_refinement_right.set_rot_from_rpy((0, 0, 0), degrees=True)
-            p_body = pose.copy() @ body_add_pose_refinement_right.copy()
+
+            # Create a body offset without rotation
+            body_offset = Pose3D((-object_interaction_config["STAND_DISTANCE"], -0.00, -0.00))
+            body_offset.set_rot_from_rpy((0, 0, 0), degrees=True)
+            p_body = pose.copy() @ body_offset.copy()
 
             #################################
             # Move spot to the required pose

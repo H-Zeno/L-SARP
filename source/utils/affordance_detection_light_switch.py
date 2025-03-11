@@ -63,7 +63,7 @@ def GPT4_query(api_key, prompt, cropped_image, max_tokens: int = 1, detail: str=
     }
 
     payload = {
-        "model": "gpt-4-turbo",
+        "model": "gpt-4o",
         "messages": [
             {
                 "role": "user",

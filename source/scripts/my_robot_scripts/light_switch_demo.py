@@ -219,9 +219,9 @@ class _Push_Light_Switch(ControlFunction):
         #################################
         for idx, pose in enumerate(poses):
             pose_start_time = time.time()
-            body_add_pose_refinement_right = Pose3D((-STAND_DISTANCE, -0.00, -0.00))
-            body_add_pose_refinement_right.set_rot_from_rpy((0, 0, 0), degrees=True)
-            p_body = pose.copy() @ body_add_pose_refinement_right.copy()
+            body_offset_right = Pose3D((-STAND_DISTANCE, -0.00, -0.00))
+            body_offset_right.set_rot_from_rpy((0, 0, 0), degrees=True)
+            p_body = pose.copy() @ body_offset_right.copy()
             
             move_body(p_body.to_dimension(2), frame_name)
             logging.info(f"Moved body to switch {idx+1} of {len(poses)}")

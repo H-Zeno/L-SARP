@@ -34,6 +34,7 @@ from robot_utils.video import (
     localize_from_images,
     get_rgb_pictures,
     get_greyscale_pictures,
+    get_d_pictures,
     relocalize,
     select_points_from_bounding_box,
     set_gripper,
@@ -113,9 +114,18 @@ class RobotState:
             image_source = self.default_image_source
         
         if image_source in self.hand_image_sources:
-            self.image_state = get_rgb_pictures(image_sources=[image_source], gripper_open=True)[0][0]
+            self.image_state = get_rgb_pictures(image_sources=[image_source], gripper_open=True)[0]
         else: 
-            self.image_state = get_greyscale_pictures(image_sources=[image_source], gripper_open=False)[0][0]
+            self.image_state = get_greyscale_pictures(image_sources=[image_source], gripper_open=False)[0]
+
+    def update_depth_image_state(self, image_source: Optional[str] = None) -> None:
+        if image_source is None:
+            image_source = self.default_image_source
+        
+        if image_source in self.hand_image_sources:
+            self.depth_image_state = get_d_pictures(image_sources=[image_source], gripper_open=True)[0]
+        else:
+            self.depth_image_state = get_d_pictures(image_sources=[image_source], gripper_open=False)[0]
 
     def save_image_state(self, image_description: Optional[str] = None) -> None:
         save_dir = Path(self.config["robot_planner_settings"]["path_to_scene_data"]) / self.config["robot_planner_settings"]["active_scene"] / "images"
@@ -127,14 +137,27 @@ class RobotState:
         else:
             save_path = save_dir / f"{time.time()}.png"
 
-        image = Image.fromarray(self.image_state)
+        image = Image.fromarray(self.image_state[0])
         image.save(save_path)
+
+    # def save_depth_image_state(self, image_description: Optional[str] = None) -> None:
+    #     save_dir = Path(self.config["robot_planner_settings"]["path_to_scene_data"]) / self.config["robot_planner_settings"]["active_scene"] / "images"
+        
+    #     if not save_dir.exists():
+    #         save_dir.mkdir(parents=True)
+    #     if image_description is not None:
+    #         save_path = save_dir / f"{time.time()}_{image_description}.png"
+    #     else:
+    #         save_path = save_dir / f"{time.time()}.png"
+
+    #     image = Image.fromarray(self.depth_image_state)
+    #     image.save(save_path)
 
     def get_current_image_content(self) -> ImageContent:
         """Converts the image_state to an ImageContent instance."""
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
             temp_path = temp_file.name
-            image = Image.fromarray(self.image_state)
+            image = Image.fromarray(self.image_state[0])
             image.save(temp_path)
         
         image_content = ImageContent.from_image_file(temp_path)

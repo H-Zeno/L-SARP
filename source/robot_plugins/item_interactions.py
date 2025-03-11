@@ -41,6 +41,9 @@ from LostFound.src.scene_graph import SceneGraph
 
 from source.planner_core.robot_state import RobotStateSingleton
 
+
+light_switch_detection = LightSwitchDetection()
+
 robot_state = RobotStateSingleton()
 
 from robot_plugins.communication import CommunicationPlugin
@@ -66,28 +69,8 @@ class ItemInteractionsPlugin:
     def _push_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> str:
         
         # # Now hard code the normal of the light switch (has to be done in the scene graph)
-        # light_switch_node.set_normal(np.array([-1, 0, 0]))
+       
 
-        # sem_label_lamp = next((k for k, v in scene_graph.label_mapping.items() if v == "lamp"), None)
-        # lamp_nodes = [node for node in scene_graph.nodes.values() if node.sem_label == sem_label_lamp]
-        # POSES_LAMPS = [Pose3D(node.centroid) for node in lamp_nodes]
-        # IDS_LAMPS = [node.object_id for node in lamp_nodes]
-
-        # #################################
-        # # localization of spot based on camera images and depth scans
-        # #################################
-        # start_time = time.time()
-        # set_gripper_camera_params('640x480')
-
-        # frame_name = localize_from_images(self.config, vis_block=False)
-
-        # end_time_localization = time.time()
-        # logging.info(f"Localization time: {end_time_localization - start_time}")
-
-        # #################################
-        # # Move spot to the center of the scene
-        # #################################
-        # move_body(POSE_CENTER, frame_name)
 
         # #################################
         # # Check lamp states pre interaction
