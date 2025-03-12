@@ -19,6 +19,7 @@ class SceneConfig:
 class Scene(Enum):
     TEST_VIRTUAL_SCENE = SceneConfig("test_virtual_scene", ["nav", "text"])
     SEMANTIC_CORNER = SceneConfig("semantic_corner")
+    SEMANTIC_CORNER_WITH_BED = SceneConfig("semantic_corner_with_bed")
     APARTMENT_0 = SceneConfig("apartment_0", ["text"])
     APARTMENT_1 = SceneConfig("apartment_1")
     APARTMENT_2 = SceneConfig("apartment_2")

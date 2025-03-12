@@ -22,7 +22,7 @@ from semantic_kernel.agents.strategies import (
 )
 from semantic_kernel.agents.strategies.termination.termination_strategy import TerminationStrategy
 from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion, OpenAIChatPromptExecutionSettings
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion, OpenAIChatPromptExecutionSettings, OpenAIPromptExecutionSettings
 from semantic_kernel.contents import ChatHistory, ChatMessageContent
 from semantic_kernel.functions import KernelArguments, KernelFunctionFromPrompt, kernel_function
 from semantic_kernel.services.ai_service_client_base import AIServiceClientBase
@@ -74,10 +74,17 @@ class TaskPlannerResponse(BaseModel):
     """A response from the task planner agent."""
     tasks : List[TaskResponse]
 
+
+
 class RobotPlanner:
     """
     Class that handles the planning of the robot.
     """
+    # Loading scene graph from json file
+    scene_graph_path = Path(config["robot_planner_settings"]["path_to_scene_data"]) / config["robot_planner_settings"]["active_scene"] / "scene_graph.json"
+    with open(scene_graph_path, "r") as file:
+        scene_graph_data = json.load(file)
+    
     def __init__(
         self, 
         scene: Scene,
@@ -153,13 +160,13 @@ class RobotPlanner:
 
         # General Multimodal Intelligence model (GPT4o)
         self.kernel.add_service(OpenAIChatCompletion(
-            service_id="general_intelligence",
+            service_id="gpt4o",
             api_key=self._planner_settings.get("OPENAI_API_KEY"),
             ai_model_id="gpt-4o-2024-11-20"))
 
         # # Set up highly intelligent Google Gemini model for answering question
         # self.kernel.add_service(GoogleAIChatCompletion(
-        #     service_id="general_intelligence",
+        #     service_id="gpt4o",
         #     api_key=dotenv_values().get("GEMINI_API_KEY"),
         #     gemini_model_id="gemini-2.0-flash"))
 
@@ -199,18 +206,18 @@ class RobotPlanner:
 
         # Create task generation agent with auto function calling
         task_generation_endpoint_settings = OpenAIChatPromptExecutionSettings(
-            service_id="general_intelligence",
             max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
             temperature=float(self._planner_settings.get("TEMPERATURE")),
             top_p=float(self._planner_settings.get("TOP_P")),
+            structured_json_response=True,
             function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
         )
         self.task_planner_agent = ChatCompletionAgent(
-            service_id="deepseek-r1",
+            service_id="o1",
             kernel=self.kernel,
             name="TaskPlannerAgent",
             instructions=TASK_PLANNER_AGENT_INSTRUCTIONS.format(model_description=model_desc),
-            execution_settings=task_generation_endpoint_settings
+            # execution_settings=task_generation_endpoint_settings
         )
 
     def initialize_task_execution_agent(self) -> None:
@@ -219,16 +226,16 @@ class RobotPlanner:
         """
 
         task_execution_endpoint_settings = OpenAIChatPromptExecutionSettings(
-            service_id="general_intelligence",
+            service_id="gpt4o",
             max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
             temperature=float(self._planner_settings.get("TEMPERATURE")),
             top_p=float(self._planner_settings.get("TOP_P")),
-            function_choice_behavior=FunctionChoiceBehavior.Auto()
+            function_choice_behavior=FunctionChoiceBehavior.Auto(),
         )
 
         # Create task execution agent with auto function calling
         self.task_execution_agent = ChatCompletionAgent(
-            service_id="general_intelligence",
+            service_id="gpt4o",
             kernel=self.kernel,
             name="TaskExecutionAgent",
             instructions=TASK_EXECUTION_AGENT_INSTRUCTIONS,
@@ -240,14 +247,14 @@ class RobotPlanner:
         Initializes the goal completion checker agent.
         """
         goal_completion_checker_endpoint_settings = OpenAIChatPromptExecutionSettings(
-            service_id="general_intelligence",
+            service_id="gpt4o",
             max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
             temperature=float(self._planner_settings.get("TEMPERATURE")),
             top_p=float(self._planner_settings.get("TOP_P")),
             function_choice_behavior=FunctionChoiceBehavior.Auto()
         )
         self.goal_completion_checker_agent = ChatCompletionAgent(
-            service_id="general_intelligence",
+            service_id="gpt4o",
             kernel=self.kernel,
             name="GoalCompletionCheckerAgent",
             instructions=GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
@@ -321,7 +328,7 @@ class RobotPlanner:
 
     #     return self.task_completion_group_chat
 
-    async def _create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> None:
+    async def _create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> str:
         # Check if json_format_chat_history exists
 
 
@@ -330,42 +337,58 @@ class RobotPlanner:
             self.json_format_chat_history = ChatHistory()
             
         plan_generation_prompt = CREATE_TASK_PLANNER_PROMPT_TEMPLATE.format(goal=self.goal, 
-                                                                             scene_graph=scene_graph_to_json(robot_state.scene_graph), 
+                                                                             scene_graph=self.scene_graph_data, 
                                                                              robot_position=str("(0,0,0)"))
+        # scene_graph=scene_graph_to_json(robot_state.scene_graph)
         # frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
         logger.info("========================================")
         logger.info(f"Plan generation prompt: {plan_generation_prompt}")
         logger.info("========================================")
 
-        logger.info("========================================")
-        logger.info(f"json_format_chat_history: {self.json_format_chat_history}")
-        logger.info("========================================")
-
-
         plan_response, self.json_format_chat_history = await invoke_agent(agent=self.task_planner_agent, 
                                                                           chat_history=self.json_format_chat_history,
                                                                           input_text_message=additional_message + plan_generation_prompt, 
                                                                           input_image_message=robot_state.get_current_image_content())
-
         logger.info("========================================")
-        logger.info(f"Reasoning about the initial plan: {str(plan_response)}")
+        logger.info(f"Initial plan full response: {str(plan_response)}")
         logger.info("========================================")
 
-        plan_json_str = str(plan_response).replace('```json', '').replace('```', '').strip()
+
+        # # Define the pattern to extract everything before ```json
+        # pattern_before_json = r"(.*?)```json"
+        # match_before_json = re.search(pattern_before_json, plan_response, re.DOTALL)
+
+        # # Extract and assign to reasoning variable
+        # chain_of_thought = match_before_json.group(1).strip() if match_before_json else ""
+        chain_of_thought = ""
+
+        pattern = r"```json\s*(.*?)\s*```"
+        match = re.search(pattern, plan_response, re.DOTALL)
+        if match:
+            json_content_inside = match.group(1)
+            plan_json_str = str(json_content_inside).replace('```json', '').replace('```', '').strip()
+        else:
+            logger.info('No ```json``` block found in response. Using the whole response as JSON.')
+            plan_json_str = str(plan_response).replace('```json', '').replace('```', '').strip()
 
         try:
+            logger.info("========================================")
+            logger.info(f"Plan JSON string: {plan_json_str}")   
+            logger.info("========================================")
             self.plan = json.loads(plan_json_str)
-            self.planning_chat_history.add_user_message("Initial plan:" + str(self.plan))
-            logger.info(f"Initial plan: {json.dumps(self.plan, indent=2)}")
-
-
+            
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from response: {e}")
             await self._create_task_plan(additional_message="Failed to parse JSON from response with error: " + str(e) + ". Please try again.")
         
+        self.planning_chat_history.add_user_message("Initial plan:" + str(self.plan))
+        logger.info(f"Initial plan: {json.dumps(self.plan, indent=2)}")
+        # Log the reasoning content
+        logger.info(f"Chain of thought of initial plan (in case of reasoning model): {chain_of_thought}")
+
         self.json_format_chat_history = None # Reset the chat history
-        return None
+        return chain_of_thought
 
     @kernel_function(description="Function to call when something happens that doesn't follow the initial plan generated by the task planning agent.")
     async def update_task_plan(self, issue_description: Annotated[str, "Detailed description of the current explanation and what went different to the original plan"]) -> None:
@@ -379,8 +402,9 @@ class RobotPlanner:
                                                                         issue_description=issue_description, 
                                                                         tasks_completed=', '.join(map(str, self.tasks_completed)), 
                                                                         planning_chat_history=self.planning_chat_history, 
-                                                                        scene_graph=scene_graph_to_json(robot_state.scene_graph),
+                                                                        scene_graph=self.scene_graph_data,
                                                                         robot_position=str("(0,0,0)"))
+        # scene_graph=scene_graph_to_json(robot_state.scene_graph)
         # robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
         updated_plan_response, self.json_format_chat_history = await invoke_agent(agent=self.task_planner_agent, 
@@ -392,24 +416,42 @@ class RobotPlanner:
         logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
         logger.info("========================================")
 
-        updated_plan_json_str = str(updated_plan_response).replace('```json', '').replace('```', '').strip()
+        # # Define the pattern to extract everything before ```json
+        # pattern_before_json = r"(.*?)```json"
+        # match_before_json = re.search(pattern_before_json, updated_plan_response, re.DOTALL)
 
+        # # Extract and assign to reasoning variable
+        # chain_of_thought = match_before_json.group(1).strip() if match_before_json else ""
+
+        chain_of_thought = ""
+
+        pattern = r"```json\s*(.*?)\s*```"
+        match = re.search(pattern, updated_plan_response, re.DOTALL)
+
+        if match:
+            json_content_inside = match.group(1)
+            updated_plan_json_str = str(json_content_inside).replace('```json', '').replace('```', '').strip()
+        else:
+            logger.info('No ```json``` block found in response. Using the whole response as JSON.')
+            updated_plan_json_str = str(updated_plan_response).replace('```json', '').replace('```', '').strip()
+            
         try:
             self.plan = json.loads(updated_plan_json_str)
-            self.planning_chat_history.add_user_message("Issue description with previous plan:" + issue_description)
-            self.planning_chat_history.add_user_message("Updated plan:" + str(self.plan))
-            logger.info("========================================")
-            logger.info(f"Extracted updated plan: {json.dumps(self.plan, indent=2)}")
-            logger.info("========================================")
-            self.json_format_chat_history = None
-        
+           
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from response: {e}")
             await self.update_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.")
-                
-        return None
+        
+        self.planning_chat_history.add_user_message("Issue description with previous plan:" + issue_description)
+        self.planning_chat_history.add_user_message("Updated plan:" + str(self.plan))
+        logger.info("========================================")
+        logger.info(f"Extracted updated plan: {json.dumps(self.plan, indent=2)}")
+        logger.info("========================================")
+        self.json_format_chat_history = None
+        
+        return chain_of_thought
 
-    async def create_task_plan_from_goal(self, goal: Annotated[str, "The goal to be achieved by the robot"]) -> Dict:
+    async def create_task_plan_from_goal(self, goal: Annotated[str, "The goal to be achieved by the robot"]) -> Tuple[Dict, str]:
         """
         Sets the goal for the robot planner and creates an initial task plan.
         """
@@ -420,11 +462,11 @@ class RobotPlanner:
         self.tasks_completed = []
         
         # Create initial plan
-        await self._create_task_plan()
+        chain_of_thought = await self._create_task_plan()
         
         logger.info(f"Goal set to: {self.goal}. Initial plan created.")
 
-        return self.plan
+        return self.plan, chain_of_thought
 
 
 class ApprovalTerminationStrategy(TerminationStrategy):

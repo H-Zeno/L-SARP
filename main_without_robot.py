@@ -69,11 +69,17 @@ async def main():
     ending = config["pre_scanned_graphs"]["high_res"]
     SCAN_DIR = os.path.join(base_path, ending)
 
-    logging.info(f"Loading scene graph from {SCAN_DIR}. This may take a few seconds...")
-    scene_graph = get_scene_graph(SCAN_DIR, drawers=True, light_switches=True)
+    # Loading scene graph from json file
+    scene_graph_path = Path(config["robot_planner_settings"]["path_to_scene_data"]) / config["robot_planner_settings"]["active_scene"] / "scene_graph.json"
+    with open(scene_graph_path, "r") as file:
+        scene_graph_data = json.load(file)
+
+    # logging.info(f"Loading scene graph from {SCAN_DIR}. This may take a few seconds...")
+    # scene_graph = get_scene_graph(SCAN_DIR, drawers=False, light_switches=True)
     
     # Initialze the robot state with the pre-computed scene graph
-    robot_state.set_instance(RobotState(scene_graph=scene_graph))
+    # robot_state.set_instance(RobotState(scene_graph=scene_graph))
+    robot_state.set_instance(RobotState())
     
     # Process existing predefined goals
     goals_path = Path("configs/goals.json")  # Convert string to Path object
@@ -124,7 +130,13 @@ async def main():
         # {robot_position}
         
         # Set the goal and create the initial plan
-        initial_plan = await robot_planner.create_task_plan_from_goal(goal)
+        time_before = datetime.now()
+        initial_plan, chain_of_thought = await robot_planner.create_task_plan_from_goal(goal)
+        time_after = datetime.now()
+        inference_time = time_after - time_before
+        logger.info(f"Time taken for inference: {inference_time}")
+
+        goal_response = {'inference_time (seconds)': str(inference_time.seconds), 'zero_shot_plan': initial_plan, 'chain_of_thought': chain_of_thought}
 
         # Save the initial plan that is generated
         plan_gen_save_path = Path(config['robot_planner_settings']['path_to_scene_data']) / config['robot_planner_settings']['active_scene'] / "initial_plans.json"
@@ -137,35 +149,37 @@ async def main():
 
         with open(plan_gen_save_path, 'r') as file:
             existing_data = json.load(file)
-            existing_data[goal] = initial_plan
+            existing_goal_responses = existing_data.get(goal, {})
+            existing_goal_responses[robot_planner.task_planner_agent.service_id] = goal_response
+            existing_data[goal] = existing_goal_responses
             new_data = json.dumps(existing_data, indent=2)
 
         with open(plan_gen_save_path, 'w') as file:
             file.write(new_data)
 
-        # Main Agentic Loop
-        while True:
+        # # Main Agentic Loop
+        # while True:
             
-            # Execute the plan of action, with new
-            for task in robot_planner.plan["tasks"]:
-                robot_planner.task = task
+        #     # Execute the plan of action, with new
+        #     for task in robot_planner.plan["tasks"]:
+        #         robot_planner.task = task
 
-                # Execute the task
-                task_execution_prompt = task_completion_prompt_template.format(task=task, 
-                                                                                plan=robot_planner.plan, 
-                                                                                scene_graph=robot_state.scene_graph.scene_graph_to_json())
-                        #                                                          robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
+        #         # Execute the task
+        #         task_execution_prompt = task_completion_prompt_template.format(task=task, 
+        #                                                                         plan=robot_planner.plan, 
+        #                                                                         scene_graph=scene_graph_data)
+        #                 #                                                          robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
-                task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, 
-                                                                                                chat_history=ChatHistory(),
-                                                                                                input_text_message=task_execution_prompt, 
-                                                                                                input_image_message=robot_state.get_current_image_content(),
-                                                                                                debug=debug)
+        #         task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, 
+        #                                                                                         chat_history=ChatHistory(),
+        #                                                                                         input_text_message=task_execution_prompt, 
+        #                                                                                         input_image_message=robot_state.get_current_image_content(),
+        #                                                                                         debug=debug)
 
-                # Break out of the task execution loop when replanning
-                if robot_planner.replanned == True:
-                    robot_planner.replanned = False
-                    break
+        #         # Break out of the task execution loop when replanning
+        #         if robot_planner.replanned == True:
+        #             robot_planner.replanned = False
+        #             break
         
                 # Activate the goal completion checker agent (small quick model)
 
@@ -193,7 +207,7 @@ async def main():
         # 2. RAG on descriptions of nodes in the scene graph
         # 3. The nodes of the scene graph that are in the field of view should be highlighted/get more attention
         # The nodes in the field of view should be automatically enterred in a text description that makes up the robot state
-        safe_power_off()
+        # safe_power_off()
 
 if __name__ == "__main__":
     asyncio.run(main())

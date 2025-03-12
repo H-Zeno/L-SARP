@@ -69,13 +69,10 @@ class RobotState:
     """
     config = Config()
     
-    # Scene graph with semantic information about the environment
-    scene_graph: Optional[SceneGraph] = None
-
     # objects_in_view: List[int] = field(default_factory=list)
     
     
-    def __init__(self, scene_graph: SceneGraph):
+    def __init__(self, scene_graph_object: Optional[SceneGraph] = None, scene_graph_str: Optional[str] = None):
 
         # Image state
         self._get_available_cameras()
@@ -89,7 +86,11 @@ class RobotState:
         # # The image state gets updated in the main function
         # self.save_image_state(image_description="initial_image")
         
-        self.scene_graph = scene_graph  # Explicitly set the scene_graph attribute
+        if scene_graph_object is not None:
+            self.scene_graph = scene_graph_object  # Explicitly set the scene_graph attribute
+        else:
+            self.scene_graph = None
+        
         self.current_room: str = "unknown" # Can be loaded from the scene configuration file
         
 
