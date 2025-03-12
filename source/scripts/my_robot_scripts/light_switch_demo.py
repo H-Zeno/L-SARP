@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # =============================================================================
 # Standard Library Imports
+import datetime
 import logging
 import random
 import time
@@ -20,6 +21,7 @@ from typing import List, Optional, Tuple
 # =============================================================================
 # Bosdyn and Robot Utilities
 from bosdyn.client import Sdk
+from bosdyn.api.image_pb2 import ImageResponse
 from robot_utils.basic_movements import (
     carry_arm, stow_arm, move_body, gaze, carry, move_arm
 )
@@ -41,7 +43,7 @@ from utils.singletons import (
 )
 from utils.light_switch_interaction import LightSwitchDetection, LightSwitchInteraction
 from utils.affordance_detection_light_switch import compute_affordance_VLM_GPT4, compute_advanced_affordance_VLM_GPT4
-from bosdyn.api.image_pb2 import ImageResponse
+
 from utils.object_detetion import BBox, Detection, Match
 from utils.pose_utils import calculate_light_switch_poses
 from utils.bounding_box_refinement import refine_bounding_box
@@ -120,7 +122,7 @@ elif LEVEL == "both":
 WORKSPACE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../..")
 LOGGING_PATH = os.path.join(WORKSPACE_ROOT, "logging_lightswitch_experiments")
 os.makedirs(LOGGING_PATH, exist_ok=True)
-log_file_path = os.path.join(LOGGING_PATH, f"switches_experiment_LEVEL_{LEVEL}_RUN_{RUN}.log")
+log_file_path = os.path.join(LOGGING_PATH, f"switches_experiment_LEVEL_{LEVEL}_RUN_{RUN}_{datetime.datetime.now().strftime('%m%d-%H%M%S')}.log")
 if os.path.exists(log_file_path):
     raise FileExistsError(f"The file '{log_file_path}' already exists.")
 logging.basicConfig(filename=log_file_path, filemode='w', format='%(name)s - %(levelname)s - %(message)s')
@@ -187,15 +189,17 @@ class _Push_Light_Switch(ControlFunction):
         #################################
         set_gripper_camera_params('1920x1080')
         time.sleep(1)
-        gaze(cabinet_pose, frame_name, gripper_open=True)
+        user_confirmation = input("The robot now wants to gaze at the cabinet with the pose {cabinet_pose}. Press Enter 'yes' if you want this to happen.")
+        if user_confirmation == "yes":
+            gaze(cabinet_pose, frame_name, gripper_open=True)
 
-        depth_image_response, color_response = get_camera_rgbd(
-            in_frame="image",
-            vis_block=False,
-            cut_to_size=False,
-        )
-        set_gripper_camera_params('1280x720')
-        stow_arm()
+            depth_image_response, color_response = get_camera_rgbd(
+                in_frame="image",
+                vis_block=False,
+                cut_to_size=False,
+            )
+            set_gripper_camera_params('1280x720')
+            stow_arm()
 
         #################################
         # Detect the light switch bounding boxes and poses in the scene
@@ -223,7 +227,9 @@ class _Push_Light_Switch(ControlFunction):
             body_offset_right.set_rot_from_rpy((0, 0, 0), degrees=True)
             p_body = pose.copy() @ body_offset_right.copy()
             
-            move_body(p_body.to_dimension(2), frame_name)
+            user_confirmation = input(f"The robot now wants to move to the following pose: {p_body.to_dimension(2)}. Press Enter 'yes' if you want this to happen.")
+            if user_confirmation == "yes":
+                move_body(p_body.to_dimension(2), frame_name)
             logging.info(f"Moved body to switch {idx+1} of {len(poses)}")
             
             end_time_move_body = time.time()

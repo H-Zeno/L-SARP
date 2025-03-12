@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-LSARP_DIR="${LSARP%/}"  # Remove trailing slash if present
+LSARP_DIR="/home/cvg-robotics/zeno_ws/L-SARP/" 
 CONFIG_FILE="configs/config.yaml"
 
 # Function to check if directory exists

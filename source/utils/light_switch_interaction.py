@@ -24,6 +24,7 @@ from utils.bounding_box_refinement import refine_bounding_box
 from utils.affordance_detection_light_switch import compute_advanced_affordance_VLM_GPT4, check_lamp_state
 from bosdyn.api.image_pb2 import ImageResponse
 
+yolov8_weights_path = "/home/cvg-robotics/zeno_ws/L-SARP/weights/train30/weights/best.pt"
 
 class LightSwitchDetection:
     def __init__(self):
@@ -104,7 +105,7 @@ class LightSwitchDetection:
             results_predict[0].show()
 
         elif model_type == "yolov8":
-            model = YOLO('../../weights/train27/weights/best.pt')
+            model = YOLO(yolov8_weights_path)
             results_predict = model.predict(source=image, imgsz=1280, conf=0.15, iou=0.4, max_det=9, agnostic_nms=True,
                                             save=False)
 
@@ -160,7 +161,7 @@ class LightSwitchDetection:
     def validate_light_switches(self, data_path, model_type: str = "yolov8"):
 
         if model_type == "yolov8":
-            model = YOLO('../../weights/train27/weights/best.pt')
+            model = YOLO(yolov8_weights_path)
             metrics = model.val(data=data_path, imgsz=1280)
             result = metrics.results_dict
 
