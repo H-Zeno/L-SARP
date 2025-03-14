@@ -1,6 +1,6 @@
 import os
 from utils.recursive_config import Config
-from scripts.temp_scripts.deepseek_exploration import ask_deepseek
+# from scripts.temp_scripts.deepseek_exploration import ask_deepseek
 import json
 import math
 import numpy as np
@@ -117,8 +117,9 @@ def main():
     # pipeline to get object via pointcloud segmentation
     # ... robot dependant ...
     # pipeline after object has not been found at original location
-    ask_deepseek(OBJECT)
-    center, pose = get_circle_pose(0)  # to get pose in front of most likely (=index 0) furniture determined by deepseek
+    # ask_deepseek(OBJECT) -> use the planning framework
+    center, pose = get_circle_pose(0)  # to get pose in front of most likely (=index 0) furniture determined by the planning framework
+    # Currently it only supports kitchen cabinets and shelves
     # drive to pose in front of shelf
     # take picture of shelf with robot
     # ask GPT if object is in shelf

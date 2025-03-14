@@ -69,17 +69,16 @@ async def main():
     ending = config["pre_scanned_graphs"]["high_res"]
     SCAN_DIR = os.path.join(base_path, ending)
 
-    # Loading scene graph from json file
-    scene_graph_path = Path(config["robot_planner_settings"]["path_to_scene_data"]) / config["robot_planner_settings"]["active_scene"] / "scene_graph.json"
-    with open(scene_graph_path, "r") as file:
-        scene_graph_data = json.load(file)
+    # Loading/computing the scene graph
+    scene_graph_path = Path(path_to_scene_data/ active_scene_name / "full_scene_graph.pkl")
+    scene_graph_json_path = Path(path_to_scene_data/ active_scene_name / "scene_graph.json")
+    logging.info(f"Loading scene graph from {SCAN_DIR}. This may take a few seconds...")
+    scene_graph = get_scene_graph(SCAN_DIR, graph_save_path=scene_graph_path, drawers=False, light_switches=True)
+    scene_graph.save_as_json(scene_graph_json_path)
 
-    # logging.info(f"Loading scene graph from {SCAN_DIR}. This may take a few seconds...")
-    # scene_graph = get_scene_graph(SCAN_DIR, drawers=False, light_switches=True)
-    
-    # Initialze the robot state with the pre-computed scene graph
-    # robot_state.set_instance(RobotState(scene_graph=scene_graph))
-    robot_state.set_instance(RobotState())
+    # Initialze the robot state with the scene graph
+    robot_state.set_instance(RobotState(scene_graph_object=scene_graph))
+    # robot_state.set_instance(RobotState())
     
     # Process existing predefined goals
     goals_path = Path("configs/goals.json")  # Convert string to Path object
@@ -139,7 +138,7 @@ async def main():
         goal_response = {'inference_time (seconds)': str(inference_time.seconds), 'zero_shot_plan': initial_plan, 'chain_of_thought': chain_of_thought}
 
         # Save the initial plan that is generated
-        plan_gen_save_path = Path(config['robot_planner_settings']['path_to_scene_data']) / config['robot_planner_settings']['active_scene'] / "initial_plans.json"
+        plan_gen_save_path = Path(path_to_scene_data / active_scene_name / "initial_plans.json")
         plan_gen_save_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Create the empty json file if it does not exist

@@ -38,7 +38,6 @@ from configs.agent_instruction_prompts import (
 )
 # from configs.plugin_configs import plugin_configs
 from configs.scenes_and_plugins_config import Scene
-from source.LostFound.src.utils import scene_graph_to_json
 from source.planner_core.robot_state import RobotStateSingleton
 from source.robot_plugins.item_interactions import ItemInteractionsPlugin
 from source.robot_plugins.navigation import NavigationPlugin
@@ -51,7 +50,6 @@ robot_state = RobotStateSingleton()
 # frame_transformer = FrameTransformerSingleton()
 
 config = Config()
-
 
 # Just get the logger, configuration is handled in main.py
 logger = logging.getLogger(__name__)
@@ -80,11 +78,7 @@ class RobotPlanner:
     """
     Class that handles the planning of the robot.
     """
-    # Loading scene graph from json file
-    scene_graph_path = Path(config["robot_planner_settings"]["path_to_scene_data"]) / config["robot_planner_settings"]["active_scene"] / "scene_graph.json"
-    with open(scene_graph_path, "r") as file:
-        scene_graph_data = json.load(file)
-    
+
     def __init__(
         self, 
         scene: Scene,
@@ -213,11 +207,11 @@ class RobotPlanner:
             function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
         )
         self.task_planner_agent = ChatCompletionAgent(
-            service_id="o1",
+            service_id="gpt4o",
             kernel=self.kernel,
             name="TaskPlannerAgent",
             instructions=TASK_PLANNER_AGENT_INSTRUCTIONS.format(model_description=model_desc),
-            # execution_settings=task_generation_endpoint_settings
+            execution_settings=task_generation_endpoint_settings
         )
 
     def initialize_task_execution_agent(self) -> None:
@@ -337,9 +331,8 @@ class RobotPlanner:
             self.json_format_chat_history = ChatHistory()
             
         plan_generation_prompt = CREATE_TASK_PLANNER_PROMPT_TEMPLATE.format(goal=self.goal, 
-                                                                             scene_graph=self.scene_graph_data, 
+                                                                             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()), 
                                                                              robot_position=str("(0,0,0)"))
-        # scene_graph=scene_graph_to_json(robot_state.scene_graph)
         # frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
         logger.info("========================================")
@@ -355,13 +348,12 @@ class RobotPlanner:
         logger.info("========================================")
 
 
-        # # Define the pattern to extract everything before ```json
-        # pattern_before_json = r"(.*?)```json"
-        # match_before_json = re.search(pattern_before_json, plan_response, re.DOTALL)
+        # Define the pattern to extract everything before ```json
+        pattern_before_json = r"(.*?)```json"
+        match_before_json = re.search(pattern_before_json, plan_response, re.DOTALL)
 
-        # # Extract and assign to reasoning variable
-        # chain_of_thought = match_before_json.group(1).strip() if match_before_json else ""
-        chain_of_thought = ""
+        # Extract and assign to reasoning variable
+        chain_of_thought = match_before_json.group(1).strip() if match_before_json else ""
 
         pattern = r"```json\s*(.*?)\s*```"
         match = re.search(pattern, plan_response, re.DOTALL)
@@ -402,9 +394,8 @@ class RobotPlanner:
                                                                         issue_description=issue_description, 
                                                                         tasks_completed=', '.join(map(str, self.tasks_completed)), 
                                                                         planning_chat_history=self.planning_chat_history, 
-                                                                        scene_graph=self.scene_graph_data,
+                                                                        scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
                                                                         robot_position=str("(0,0,0)"))
-        # scene_graph=scene_graph_to_json(robot_state.scene_graph)
         # robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
 
         updated_plan_response, self.json_format_chat_history = await invoke_agent(agent=self.task_planner_agent, 
@@ -416,12 +407,12 @@ class RobotPlanner:
         logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
         logger.info("========================================")
 
-        # # Define the pattern to extract everything before ```json
-        # pattern_before_json = r"(.*?)```json"
-        # match_before_json = re.search(pattern_before_json, updated_plan_response, re.DOTALL)
+        # Define the pattern to extract everything before ```json
+        pattern_before_json = r"(.*?)```json"
+        match_before_json = re.search(pattern_before_json, updated_plan_response, re.DOTALL)
 
-        # # Extract and assign to reasoning variable
-        # chain_of_thought = match_before_json.group(1).strip() if match_before_json else ""
+        # Extract and assign to reasoning variable
+        chain_of_thought = match_before_json.group(1).strip() if match_before_json else ""
 
         chain_of_thought = ""
 
