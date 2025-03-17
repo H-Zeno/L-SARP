@@ -2,7 +2,7 @@ import copy
 import logging
 import os
 from pathlib import Path
-from utils.coordinates import Pose3D
+from utils.coordinates import Pose2D, Pose3D
 from utils.recursive_config import Config
 from utils.vis import show_two_geometries_colored
 # from scripts.temp_scripts.deepseek_exploration import ask_deepseek
@@ -63,7 +63,7 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
     '''
     Get the normal of the front face of the furniture.
     
-    :param cabinet_pcd: PointCloud of the shelf/cabinet.
+    :param cabinet_pcd: PointCloud of the shelf/cabinet. (o3d.geometry.PointCloud)
     :return: Normal of the front face.
     '''
     # get furniture oriented bounding box
@@ -162,7 +162,8 @@ def get_pose_in_front_of_furniture(index: int=0, object_description="cabinet, sh
 
     good_points_idx = np.where(good_points_bool)[0]
     environment_cloud = pc.select_by_index(good_points_idx, invert=True)
-    furniture_cloud = pc.select_by_index(good_points_idx)
+    furniture_point_cloud = pc.select_by_index(good_points_idx)
+
 
     # # When the object is part of the scene graph, take the mask of this object that we already have from mask3d
     # cabinet_mask = robot_state.scene_graph.nodes[index].mesh_mask
@@ -208,20 +209,31 @@ def get_pose_in_front_of_furniture(index: int=0, object_description="cabinet, sh
     #     # the correct object not found, feedback to the llm to change the clip embedding description
     #     raise ValueError(f"The description of the object {object_description} did not find a match with an object in the scene graph. Please provide a more accurate description.")
 
-    # get normal of cabinet/shelf front face
-    front_normal = _get_shelf_front(furniture_cloud, furniture_centroid)
 
-    # calculate body position in front of cabinet/shelf
-    body_pose = body_planning_front(
-                environment_cloud,
-                furniture_centroid,
-                shelf_normal=front_normal,
-                min_target_distance=radius,
-                max_target_distance=radius+0.2,
-                min_obstacle_distance=0.4,
-                n=5,
-                vis_block=True,
-            )
+    # # get normal of cabinet/shelf front face (something is going wrong here with the coordinate frames)
+    # furniture_point_cloud = point_cloud = o3d.geometry.PointCloud()
+    # furniture_point_cloud.points = o3d.utility.Vector3dVector(robot_state.scene_graph.nodes[index].points)
+
+    front_normal = _get_shelf_front(furniture_point_cloud, furniture_centroid)
+
+    body_position_3d = furniture_centroid + front_normal * radius
+    body_pose = Pose2D((body_position_3d[0], body_position_3d[1]))
+    direction_towards_object = -front_normal
+    angle = math.atan2(direction_towards_object[1], direction_towards_object[0])
+    body_pose.set_rot_from_angle(angle)
+    
+    # Caclulcation of the pose in front of an object based on the point clouds, very computationally expensive
+    # # calculate body position in front of cabinet/shelf
+    # body_pose = body_planning_front(
+    #             environment_cloud,
+    #             furniture_centroid,
+    #             shelf_normal=front_normal,
+    #             min_target_distance=radius,
+    #             max_target_distance=radius+0.2,
+    #             min_obstacle_distance=0.4,
+    #             n=5,
+    #             vis_block=True,
+    #         )
 
     return furniture_centroid, body_pose
 

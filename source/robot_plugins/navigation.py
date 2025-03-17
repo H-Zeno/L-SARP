@@ -61,7 +61,7 @@ class NavigationPlugin:
         def __call__(
             self,
             config: Config,
-            object_interaction_pose: Pose3D,
+            object_interaction_pose: Pose2D,
             *args,
             **kwargs,
         ) -> None:
@@ -84,7 +84,7 @@ class NavigationPlugin:
             # Move spot to the required pose
             #################################
             move_body(
-                pose=object_interaction_pose.to_dimension(2),
+                pose=object_interaction_pose,
                 frame_name=robot_state.frame_name,
             )
 
