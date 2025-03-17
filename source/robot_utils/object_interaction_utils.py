@@ -1,15 +1,21 @@
+import copy
+import logging
 import os
 from pathlib import Path
+from utils.coordinates import Pose3D
 from utils.recursive_config import Config
+from utils.vis import show_two_geometries_colored
 # from scripts.temp_scripts.deepseek_exploration import ask_deepseek
 import json
 import math
 import numpy as np
-from utils.point_clouds import body_planning_front
+from utils.point_clouds import add_coordinate_system, body_planning_front, body_planning, get_coordinates_from_item
 from utils.openmask_interface import get_mask_points
 import open3d as o3d
 
 from planner_core.robot_state import RobotStateSingleton
+
+from utils.mask3D_interface import _get_list_of_items
 robot_state = RobotStateSingleton()
 
 config = Config()
@@ -46,7 +52,10 @@ def _get_distance_to_shelf(index: int=0, load_from_json=False) -> tuple:
     # calculate robot distance to furniture
     circle_radius_width = (furniture_dimensions[0] + 0.1) / (2 * math.tan(np.radians(H_FOV / 2))) + furniture_dimensions[1] / 2
     circle_radius_height = (furniture_dimensions[2] + 0.1) / (2 * math.tan(np.radians(V_FOV / 2))) + furniture_dimensions[1] / 2
-    print(circle_radius_width, circle_radius_height, furniture_dimensions[0])
+    if len(furniture_dimensions) < 3:
+        raise ValueError("Invalid furniture dimensions: Expected at least 3 elements.")
+
+    logging.info(f"Calculated distance to shelf: {max(circle_radius_width, circle_radius_height)} and the furniture dimensions are {furniture_dimensions}")
     return max(circle_radius_width, circle_radius_height), furniture_centroid
 
 
@@ -80,9 +89,8 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
                 vertical_faces.append({
                     'normal': normal,
                     'area': area,
-                    'objects_in_front': objects_in_front,
+                    'objects_in_front': objects_in_front
                 })
-
 
     if not vertical_faces:
         raise ValueError("No vertical faces found in shelf structure")
@@ -96,20 +104,18 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
     #     objects_in_radius += r
 
     # 2. remove the faces that have objects in front of them / are not accessible by the robot
-    print(f'vertical faces of a furniture (cabinet/shelf):', vertical_faces)
-
+    logging.info(f'vertical faces of a furniture (cabinet/shelf): {str(vertical_faces)}')
 
     valid_vertical_faces = [vertical_face for vertical_face in vertical_faces if not vertical_face['objects_in_front']]
 
     # select largest vertical face as front
     front = max(valid_vertical_faces, key=lambda x: x['area'])
 
-
     # To be more accurate, this should be extended to the face with the most free volume in front of it (for 1 meter distance)
     return front['normal']
     
 
-def get_pose_in_front_of_object(index: int=0, object_description="cabinet, shelf") -> tuple:
+def get_pose_in_front_of_furniture(index: int=0, object_description="cabinet, shelf") -> tuple:
     '''
     Get the interaction pose for the robot in front of an object. 
     Currently this function only supports cabinets and shelves. 
@@ -119,26 +125,96 @@ def get_pose_in_front_of_object(index: int=0, object_description="cabinet, shelf
     :return: Tuple of the centroid of the furniture and the body pose.
     '''
     # get necessary distance to shelf
-    radius, center = _get_distance_to_shelf(index)
+    radius, furniture_centroid = _get_distance_to_shelf(index)
     radius = max(0.8, radius)
-    # get all cabinets/shelfs in the environment
-    for idx in range(1, 5):
 
-        # When the object is part of the scene graph, take the mask of this object that we already have from mask3d
+    furniture_sem_label = robot_state.scene_graph.nodes[index].sem_label
 
-        # This is how Yasmin implemented it for cabinets and shelves:
-        cabinet_pcd, env_pcd = get_mask_points(object_description, Config(), idx=idx, vis_block=True)
+    mask_path_base = config.get_subpath("masks")
+    pred_masks_base_path = config.get_subpath("prescans")
+    ending = config["pre_scanned_graphs"]["high_res"]
+    mask_csv_folder_path = os.path.join(mask_path_base, ending)
+    pred_masks_folder = os.path.join(pred_masks_base_path, ending)
 
-        cabinet_center = np.mean(np.asarray(cabinet_pcd.points), axis=0)
-        # find correct cabinet/shelf
-        if (np.allclose(cabinet_center, center, atol=0.1)):
-            print("Object found!")
-            # get normal of cabinet/shelf front face
-            front_normal = _get_shelf_front(cabinet_pcd, cabinet_center)
-            # calculate body position in front of cabinet/shelf
-            body_pose = body_planning_front(
-                env_pcd,
-                cabinet_center,
+    pc_path = config.get_subpath("aligned_point_clouds")
+    ending = config["pre_scanned_graphs"]["high_res"]
+    pc_path = os.path.join(str(pc_path), ending, "scene.ply")
+
+    # logging.info("Starting the process of finding the best poses in front of the object.")
+    df = _get_list_of_items(str(mask_csv_folder_path))
+
+    # get all entries for our item label
+    entries = df[df["class_label"] == furniture_sem_label]
+    if index > len(entries) or index < (-len(entries) + 1):
+        index = 0
+
+    # get the mask of the item
+    entry = entries.iloc[index]
+    path_ending = entry["path_ending"]
+    pred_mask_file_path = os.path.join(pred_masks_folder, path_ending)
+
+    with open(pred_mask_file_path, "r", encoding="UTF-8") as file:
+        lines = file.readlines()
+    good_points_bool = np.asarray([bool(int(line)) for line in lines])
+    
+    # read the point cloud, select by indices specified in the file
+    pc = o3d.io.read_point_cloud(pc_path)
+
+    good_points_idx = np.where(good_points_bool)[0]
+    environment_cloud = pc.select_by_index(good_points_idx, invert=True)
+    furniture_cloud = pc.select_by_index(good_points_idx)
+
+    # # When the object is part of the scene graph, take the mask of this object that we already have from mask3d
+    # cabinet_mask = robot_state.scene_graph.nodes[index].mesh_mask
+    # cabinet_mask = np.asarray(cabinet_mask, dtype=bool)
+    # logging.info(f"Object mask loaded from scene graph and memory for object with index {index}")
+    # pcd = o3d.io.read_point_cloud(str(pcd_path))
+    # logging.info(f"Point cloud loaded from file {pcd_path}")
+    # logging.info(f"Size of the point cloud {len(pcd.points)}. Mask size {len(cabinet_mask)}")
+    # logging.info(f"Number of points in the mask {np.sum(cabinet_mask)}")
+    # cabinet_pcd = pcd.select_by_index(np.where(cabinet_mask)[0])
+    # env_pcd = pcd.select_by_index(np.where(~cabinet_mask)[0])
+    # logging.info(f"Environment point cloud loaded from scene graph and memory for object with index {index}")
+
+    # # get all cabinets/shelfs in the environment
+    # body_pose = None 
+
+    # for idx in range(0, 7):
+    #     # This is how Yasmin implemented it for cabinets and shelves:
+    #     cabinet_pcd, env_pcd = get_mask_points(object_description, Config(), idx=idx, vis_block=True)
+    #     cabinet_center = np.mean(np.asarray(cabinet_pcd.points), axis=0)
+
+    #     # find correct cabinet/shelf
+    #     logging.info(f"Cabinet center (openmask3d selected point clouds): {cabinet_center}, Furniture Centroid (Mask3D): {furniture_centroid}")
+    #     # A transformation to the robot's coordinate frame is necessary here (if we use the openmask3d point clouds)
+    #     if (np.allclose(cabinet_center, furniture_centroid, atol=0.1)):
+    #         print("Object found!")
+    #         # get normal of cabinet/shelf front face
+    #         front_normal = _get_shelf_front(cabinet_pcd, cabinet_center)
+    #         # calculate body position in front of cabinet/shelf
+    #         body_pose = body_planning_front(
+    #             env_pcd,
+    #             cabinet_center,
+    #             shelf_normal=front_normal,
+    #             min_target_distance=radius,
+    #             max_target_distance=radius+0.2,
+    #             min_obstacle_distance=0.4,
+    #             n=5,
+    #             vis_block=True,
+    #         )
+    #         break
+
+    # if body_pose is None: 
+    #     # the correct object not found, feedback to the llm to change the clip embedding description
+    #     raise ValueError(f"The description of the object {object_description} did not find a match with an object in the scene graph. Please provide a more accurate description.")
+
+    # get normal of cabinet/shelf front face
+    front_normal = _get_shelf_front(furniture_cloud, furniture_centroid)
+
+    # calculate body position in front of cabinet/shelf
+    body_pose = body_planning_front(
+                environment_cloud,
+                furniture_centroid,
                 shelf_normal=front_normal,
                 min_target_distance=radius,
                 max_target_distance=radius+0.2,
@@ -147,11 +223,71 @@ def get_pose_in_front_of_object(index: int=0, object_description="cabinet, shelf
                 vis_block=True,
             )
 
-    if body_pose is None:
-        # the correct object not found, feedback to the llm to change the clip embedding description
-        raise ValueError(f"The description of the object {object_description} did not find a match with an object in the scene graph. Please provide a more accurate description.")
+    return furniture_centroid, body_pose
+
+
+def get_best_poses_in_front_of_object(index: int, object_description: str) -> list[tuple[Pose3D, float]]:
+
+    item_centroid = robot_state.scene_graph.nodes[index].centroid
+    item_sem_label = robot_state.scene_graph.nodes[index].sem_label
+
+    mask_path_base = config.get_subpath("masks")
+    pred_masks_base_path = config.get_subpath("prescans")
+    ending = config["pre_scanned_graphs"]["high_res"]
+    mask_csv_folder_path = os.path.join(mask_path_base, ending)
+    pred_masks_folder = os.path.join(pred_masks_base_path, ending)
+
+    pc_path = config.get_subpath("aligned_point_clouds")
+    ending = config["pre_scanned_graphs"]["high_res"]
+    pc_path = os.path.join(str(pc_path), ending, "scene.ply")
+
+    # logging.info(f"Trying to find the item cloud of the object with description {object_description}.")
     
-    return cabinet_center, body_pose
+    logging.info("Starting the process of finding the best poses in front of the object.")
+    df = _get_list_of_items(str(mask_csv_folder_path))
+
+    # get all entries for our item label
+    entries = df[df["class_label"] == item_sem_label]
+    if index > len(entries) or index < (-len(entries) + 1):
+        index = 0
+
+    # get the mask of the item
+    entry = entries.iloc[index]
+    path_ending = entry["path_ending"]
+    pred_mask_file_path = os.path.join(pred_masks_folder, path_ending)
+
+    with open(pred_mask_file_path, "r", encoding="UTF-8") as file:
+        lines = file.readlines()
+    good_points_bool = np.asarray([bool(int(line)) for line in lines])
+
+    item_cloud = robot_state.scene_graph.nodes[index].points
+    
+    # read the point cloud, select by indices specified in the file
+    pc = o3d.io.read_point_cloud(pc_path)
+
+    good_points_idx = np.where(good_points_bool)[0]
+    environment_cloud = pc.select_by_index(good_points_idx, invert=True)
+    item_cloud = pc.select_by_index(good_points_idx)
+
+    x = copy.deepcopy(item_cloud)
+    x.paint_uniform_color((1, 0, 0))
+    y = copy.deepcopy(environment_cloud)
+    y = add_coordinate_system(y, (1, 1, 1), (0, 0, 0))
+
+    end_coordinates = Pose3D(item_centroid)
+
+    robot_targets = body_planning(
+        environment_cloud,
+        end_coordinates,
+        min_distance=0.6,
+        max_distance=1,
+        n_best=10,
+        vis_block=True,
+    )
+    logging.info(f"Found {len(robot_targets)} possible poses in front of the object. They are: {robot_targets}")
+
+    return robot_targets # Each tuple contains (pose, score)
+
 
 if __name__ == "__main__":
-    get_pose_in_front_of_object(7, "rectangular stand with a light switch")
+    get_pose_in_front_of_furniture(7, "rectangular stand with a light switch")

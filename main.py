@@ -24,6 +24,8 @@ from robot_utils.base_LSARP import initialize_robot_connection, spot_initial_loc
 
 from utils.singletons import RobotLeaseClientSingleton
 from robot_utils.frame_transformer import FrameTransformerSingleton
+from robot_plugins.navigation import NavigationPlugin
+robot_navigation = NavigationPlugin()
 
 # Initialize singletons
 robot_state = RobotStateSingleton()
@@ -97,6 +99,8 @@ async def main():
          # Initialze the robot state with the scene graph
         robot_planner = RobotPlanner(scene=active_scene)
         robot_state.set_instance(RobotState(scene_graph_object=scene_graph))
+
+        # robot_navigation.move_to_object(22, "shelf with a TV on top")
 
         ### Online Live Instruction ###
         if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":

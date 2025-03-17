@@ -182,23 +182,23 @@ class ItemInteractionsPlugin:
     #     return robot_state.frame_name
 
     @kernel_function(description="function to call to pick up a certain object", name="pick_up_object")
-    async def pick_up_object(self, object_node: ObjectNode, scene_graph: SceneGraph) -> None:
+    async def pick_up_object(self, object_node: ObjectNode) -> None:
         pass
 
     @kernel_function(description="function to call to place a certain object", name="place_object")
-    async def place_object(self, object_node: ObjectNode, scene_graph: SceneGraph) -> None:
+    async def place_object(self, object_node: ObjectNode) -> None:
         pass
 
     @kernel_function(description="function to call to open a certain drawer present in the scene graph", name="open_drawer")
-    async def open_drawer(self, drawer_node: DrawerNode, scene_graph: SceneGraph) -> None:
+    async def open_drawer(self, drawer_node: DrawerNode) -> None:
         pass
 
     @kernel_function(description="function to call to close a certain drawer present in the scene graph", name="close_drawer")
-    async def close_drawer(self, drawer_node: DrawerNode, scene_graph: SceneGraph) -> None:
+    async def close_drawer(self, drawer_node: DrawerNode) -> None:
         pass
 
     @kernel_function(description="function to call to turn a certain light switch present in the scene graph", name="turn_light_switch")
-    async def turn_light_switch(self, light_switch_node: LightSwitchNode, scene_graph: SceneGraph) -> None:
+    async def turn_light_switch(self, light_switch_node: LightSwitchNode) -> None:
         pass
 
 

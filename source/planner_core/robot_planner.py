@@ -203,7 +203,7 @@ class RobotPlanner:
             max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
             temperature=float(self._planner_settings.get("TEMPERATURE")),
             top_p=float(self._planner_settings.get("TOP_P")),
-            structured_json_response=True,
+            structured_json_response=False,
             function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
         )
         self.task_planner_agent = ChatCompletionAgent(

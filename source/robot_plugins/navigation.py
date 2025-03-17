@@ -20,7 +20,7 @@ from robot_utils.advanced_movement import push_light_switch, turn_light_switch, 
 from robot_utils.frame_transformer import FrameTransformerSingleton
 frame_transformer = FrameTransformerSingleton()
 from robot_utils.base_LSARP import ControlFunction , take_control_with_function
-from robot_utils.object_interaction_utils import get_pose_in_front_of_object
+from robot_utils.object_interaction_utils import get_best_poses_in_front_of_object, get_pose_in_front_of_furniture
 
 from utils.light_switch_interaction import LightSwitchDetection, LightSwitchInteraction
 from utils.pose_utils import calculate_light_switch_poses
@@ -71,7 +71,6 @@ class NavigationPlugin:
             #################################
             # Calculate the required position spot should move to to interact with the object
             #################################
-            pose = Pose3D(object_interaction_pose)
 
             # # Rotate the pose to the interaction normal of the object
             # pose.set_rot_from_direction(interaction_normal_of_object)
@@ -93,9 +92,17 @@ class NavigationPlugin:
             logging.info(f"Moved spot succesfully to the object. Time to move body to object: {body_to_object_end_time - body_to_object_start_time}")
 
     @kernel_function(description="function to call when the robot needs to navigate from place A (coordinates) to place B (coordinates)", name="RobotNavigation")
-    async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph"], object_description: Annotated[str, "A clear (3-5 words) description of the object, optimized for retrieving a CLIP embedding."]) -> None:
+    async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
 
-        object_centroid_pose, object_interaction_pose = get_pose_in_front_of_object(index=object_id, object_description=object_description)
+        # If the object is a shelf:
+        object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
+        sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label)
+        logging.info(f"Object with id {object_id} has label {sem_label}.")
+        if sem_label in ["shelf", "cabinet", "coffee table", "tv stand"]:
+            object_center_openmask, object_interaction_pose = get_pose_in_front_of_furniture(index=object_id, object_description=sem_label)
+        else:
+            object_targets = get_best_poses_in_front_of_object(index=object_id, object_description=object_description)
+            object_interaction_pose = object_targets[0][0]
 
         await communication.inform_user(f"Moving to object with id {object_id}, label {robot_state.scene_graph.nodes[object_id].sem_label} and centroid {object_centroid_pose}."
                                         f"The object interaction pose is: {object_interaction_pose}"

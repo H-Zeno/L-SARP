@@ -46,7 +46,7 @@ subpaths:
   autowalks: 'data/autowalk'
   point_clouds: 'data/point_clouds'
   aligned_point_clouds: 'data/aligned_point_clouds'
-  masks: 'data/masked'
+  masks: 'data/masks'
   # environment
   environment: '.environment.yaml'
   spot_description: 'spot_description'

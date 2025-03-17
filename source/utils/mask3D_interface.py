@@ -4,6 +4,7 @@ Util functions for segmenting point clouds with Mask3D.
 
 from __future__ import annotations
 
+from glob import glob
 import os.path
 
 import numpy as np
@@ -25,18 +26,29 @@ def is_valid_label(item: str) -> bool:
 
 def _get_list_of_items(folder_path: str) -> pd.DataFrame:
     """
-    Read the csv that includes the output from Mask3D.
-    It is a 3-column csv, which specifies the file that indexes the points belonging to the object, its label, and the
+    Read the csv files (.txt) that include the output from Mask3D.
+    These csb files consist of 3-columns, which specify the file that indexes the points belonging to the object, its label, and the
     confidence.
-    :param folder_path: path of folder containing the csv
-    :return: pandas dataframe of the csv
+    :param folder_path: path of folder containing the csvs
+    :return: pandas dataframe of the combined csvs in the folder
     """
-    dir_, base = os.path.split(folder_path)
-    csv_path = os.path.join(dir_, base, f"{base}.txt")
-    df = pd.read_csv(csv_path, delimiter=" ", header=None)
-    df.columns = ["path_ending", "class_label", "confidence"]
-    return df
-
+    # Get all .txt files in the folder
+    txt_files = glob(os.path.join(folder_path, "*.txt"))
+    
+    # Initialize an empty DataFrame
+    combined_df = pd.DataFrame(columns=["path_ending", "class_label", "confidence"])
+    
+    # Read and append each .txt file to the DataFrame
+    for txt_file in txt_files:
+        df = pd.read_csv(txt_file, delimiter=" ", header=None)
+        df.columns = ["path_ending", "class_label", "confidence"]
+        combined_df = pd.concat([combined_df, df], ignore_index=True)
+    
+    # Save the combined DataFrame to a single .txt file
+    combined_txt_path = os.path.join(folder_path, "combined_output.txt")
+    combined_df.to_csv(combined_txt_path, sep=" ", index=False, header=False)
+    
+    return combined_df
 
 def get_coordinates_from_item(
     item: str,
@@ -111,16 +123,17 @@ def _test() -> None:
     config = recursive_config.Config()
 
     mask_path = config.get_subpath("masks")
-    ending = config["pre_scanned_graphs"]["masked"]
+    ending = config["pre_scanned_graphs"]["high_res"]
     mask_path = os.path.join(mask_path, ending)
 
     pc_path = config.get_subpath("aligned_point_clouds")
     ending = config["pre_scanned_graphs"]["high_res"]
     pc_path = os.path.join(str(pc_path), ending, "scene.ply")
 
-    res = get_all_item_point_clouds(mask_path, pc_path)
-    o3d.visualization.draw_geometries(res)
-    print(res)
+    _get_list_of_items(mask_path)
+    # res = get_all_item_point_clouds(mask_path, pc_path)
+    # o3d.visualization.draw_geometries(res)
+    # print(res)
 
 
 if __name__ == "__main__":
