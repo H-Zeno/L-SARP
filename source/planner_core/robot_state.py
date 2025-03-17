@@ -104,7 +104,7 @@ class RobotState:
         else:
             save_path = save_dir / f"{time.time()}.png"
 
-        image = Image.fromarray(self.image_state[0])
+        image = Image.fromarray(self.image_state)
         image.save(save_path)
 
     # def save_depth_image_state(self, image_description: Optional[str] = None) -> None:
@@ -129,7 +129,7 @@ class RobotState:
         
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
             temp_path = temp_file.name
-            image = Image.fromarray(self.image_state[0])
+            image = Image.fromarray(self.image_state)
             image.save(temp_path)
         
         image_content = ImageContent.from_image_file(temp_path)

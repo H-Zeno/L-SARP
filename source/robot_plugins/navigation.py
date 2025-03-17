@@ -115,6 +115,8 @@ class NavigationPlugin:
         else:
             await communication.inform_user("I will not move to the object.")
 
+        return None
+
         
     
     

@@ -45,6 +45,8 @@ from robot_plugins.inspection import InspectionPlugin
 from utils.agent_utils import invoke_agent, invoke_agent_group_chat
 from robot_utils.frame_transformer import FrameTransformerSingleton
 
+from utils.singletons import _SingletonWrapper
+
 # Initialize robot state singleton
 robot_state = RobotStateSingleton()
 frame_transformer = FrameTransformerSingleton()
@@ -105,6 +107,7 @@ class RobotPlanner:
         self.planning_chat_history = ChatHistory()
         self.task = None
         self.tasks_completed = []
+        self.actions_taken = []
 
         # Task planning variables
         self.json_format_chat_history = None
@@ -467,3 +470,7 @@ class ApprovalTerminationStrategy(TerminationStrategy):
         return "Approved! The goal is completed!" in history[-1].content.lower()
 
 
+class RobotPlannerSingleton(_SingletonWrapper):
+    """Singleton wrapper for the RobotPlanner class."""
+    _type_of_class = RobotPlanner
+    

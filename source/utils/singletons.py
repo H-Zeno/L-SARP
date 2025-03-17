@@ -18,7 +18,6 @@ from typing import Iterable
 
 import bosdyn
 
-
 class SingletonNotInstantiatedException(Exception):
     pass
 
@@ -90,7 +89,6 @@ class RobotStateClientSingleton(_SingletonWrapper):
 
 class RobotLeaseClientSingleton(_SingletonWrapper):
     _type_of_class = bosdyn.client.lease.LeaseClient
-
 
 class WorldObjectClientSingleton(_SingletonWrapper):
     _type_of_class = bosdyn.client.world_object.WorldObjectClient

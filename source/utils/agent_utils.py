@@ -55,9 +55,9 @@ async def invoke_agent(
         )
 
     async for content in agent.invoke(chat_history):
-        if not any(isinstance(item, (FunctionCallContent, FunctionResultContent)) for item in content.items):
+        for item in content.items:
             if debug:
-                logger.debug(f"# This text is now being saved to the chat history: '{content.content}'")
+                logger.debug(f"# This is the content.content of the response that is being saved to the chat history: '{content.content}'")
             chat_history.add_message(content)
         _write_content(content)
 

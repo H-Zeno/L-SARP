@@ -23,12 +23,12 @@ from utils.recursive_config import Config
 from robot_utils.base_LSARP import initialize_robot_connection, spot_initial_localization, power_on, safe_power_off
 
 from utils.singletons import RobotLeaseClientSingleton
+from planner_core.robot_planner import RobotPlannerSingleton
 from robot_utils.frame_transformer import FrameTransformerSingleton
-from robot_plugins.navigation import NavigationPlugin
-robot_navigation = NavigationPlugin()
 
 # Initialize singletons
 robot_state = RobotStateSingleton()
+robot_planner = RobotPlannerSingleton()
 robot_lease_client = RobotLeaseClientSingleton()
 frame_transformer = FrameTransformerSingleton()
 
@@ -73,7 +73,7 @@ async def main():
     scene_graph_path = Path(path_to_scene_data/ active_scene_name / "full_scene_graph.pkl")
     scene_graph_json_path = Path(path_to_scene_data/ active_scene_name / "scene_graph.json")
     logging.info(f"Loading scene graph from {SCAN_DIR}. This may take a few seconds...")
-    scene_graph = get_scene_graph(SCAN_DIR, graph_save_path=scene_graph_path, drawers=False, light_switches=True, vis_block=True)
+    scene_graph = get_scene_graph(SCAN_DIR, graph_save_path=scene_graph_path, drawers=False, light_switches=True, vis_block=False)
     scene_graph.save_as_json(scene_graph_json_path)
 
     
@@ -97,10 +97,8 @@ async def main():
         spot_initial_localization()
 
          # Initialze the robot state with the scene graph
-        robot_planner = RobotPlanner(scene=active_scene)
+        robot_planner.set_instance(RobotPlanner(scene=active_scene))
         robot_state.set_instance(RobotState(scene_graph_object=scene_graph))
-
-        # robot_navigation.move_to_object(22, "shelf with a TV on top")
 
         ### Online Live Instruction ###
         if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -157,6 +155,8 @@ async def main():
                 
                 This task is part of the following plan: {plan}
 
+                The following tasks have already been completed: {tasks_completed}
+
                 Here is the scene graph:
                 {scene_graph}
                 
@@ -195,6 +195,7 @@ async def main():
                 # Main Agentic Loop
                 while True:
                     
+                    task_completion_chat_history = ChatHistory()
                     # Execute the plan of action, with new
                     for task in robot_planner.plan["tasks"]:
                         robot_planner.task = task
@@ -203,20 +204,23 @@ async def main():
                         # Execute the task
                         task_execution_prompt = task_completion_prompt_template.format(task=task, 
                                                                                         plan=robot_planner.plan, 
+                                                                                        tasks_completed=robot_planner.tasks_completed,
                                                                                         scene_graph=str(scene_graph.scene_graph_to_dict()),
                                                                                         robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)))
                                                                                         
 
                         task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, 
-                                                                                                        chat_history=ChatHistory(),
+                                                                                                        chat_history=task_completion_chat_history,
                                                                                                         input_text_message=task_execution_prompt, 
                                                                                                         input_image_message=robot_state.get_current_image_content(),
                                                                                                         debug=debug)
-
+                        
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned == True:
                             robot_planner.replanned = False
                             break
+
+                        robot_planner.tasks_completed.append(task)
                 
                         # Activate the goal completion checker agent (small quick model)
 

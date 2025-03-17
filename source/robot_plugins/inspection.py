@@ -8,7 +8,7 @@ import time
 import os
 import copy
 import numpy as np
-from typing import List
+from typing import Annotated, List, Optional
 # =============================================================================
 # Robot Utilities
 from robot_utils.basic_movements import (
@@ -32,14 +32,11 @@ from utils.coordinates import Pose2D, Pose3D, average_pose3Ds, pose_distanced
 
 from source.LostFound.src.graph_nodes import LightSwitchNode
 
-
 # =============================================================================
 # Singletons
 from robot_utils.frame_transformer import FrameTransformerSingleton
-frame_transformer = FrameTransformerSingleton()
-
-
 from planner_core.robot_state import RobotStateSingleton
+frame_transformer = FrameTransformerSingleton()
 robot_state = RobotStateSingleton()
 
 # =============================================================================
@@ -64,10 +61,12 @@ class InspectionPlugin:
     class _Inspect_Object_With_Gaze(ControlFunction):
         def __call__(
             self,
+            config: Config, 
+            object_id: int,
             object_centroid_pose: Pose3D,
             *args,
             **kwargs,
-        ) -> None:
+        ) -> Optional[tuple[np.ndarray, np.ndarray]]:
 
             set_gripper_camera_params('1920x1080')
             carry()
@@ -80,8 +79,13 @@ class InspectionPlugin:
             )
             stow_arm()
 
-            robot_state.image_state = color_response[0]
-            robot_state.depth_image_state = depth_image_response[0]
+            # Validate the responses
+            if color_response is None or len(color_response) == 0 or color_response[0] is None:
+                logging.error("Failed to capture color image. color_response is None.")
+                return None
+
+            return color_response[0], depth_image_response[0]
+
 
     class _Calculate_LightSwitch_Poses(ControlFunction):
         def __call__(
@@ -93,7 +97,7 @@ class InspectionPlugin:
             #################################
             # Detect the light switch bounding boxes and poses in the scene
             #################################
-            boxes = light_switch_detection.predict_light_switches(robot_state.image_state[0], vis_block=True)
+            boxes = light_switch_detection.predict_light_switches(robot_state.image_state, vis_block=True)
             logging.info(f"INITIAL LIGHT SWITCH DETECTION")
             logging.info(f"Number of detected switches: {len(boxes)}")
 
@@ -109,24 +113,26 @@ class InspectionPlugin:
 
             return poses
 
-    @kernel_function(description="After having navigated to an object, you can call this function to inspect the object with gaze and save the image to your memory.")
-    async def inspect_object_with_gaze(self, object_id: int):
-        pass
-        # object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
-
-        # # A function to calculate the normal is necessary! For now we hardcode it with [-1, 0, 0]
-        # # HARDCODED
-        # interaction_normal_of_object = np.array([-1, 0, 0])
-
-        # await communication.inform_user( f"Moving to object with id {object_id}, label {robot_state.scene_graph.nodes[object_id].sem_label} and centroid {object_centroid_pose}." 
-        #                                 f"The current position of the robot is {frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)}")
+    @kernel_function(description="After having navigated to an object/furniture, you can call this function to inspect the object with gaze and save the image to your memory.")
+    async def inspect_object_with_gaze(self, object_id: Annotated[int, "ID of the object in the scene graph"]) -> None:
         
-        # response = await communication.ask_user("Do you want me to move to the object? Please enter exactly 'yes' if you want me to move to the object.")   
-        # if response == "yes":
-        #     take_control_with_function(config=self.general_config, function=self._Move_To_Object(), object_centroid_pose=object_centroid_pose, interaction_normal_of_object=interaction_normal_of_object, body_assist=True)
-        #     logging.info(f"Robot moved to the object with id {object_id}")
-        # else:
-        #     await communication.inform_user("I will not move to the object.")
+        centroid_pose = Pose3D(robot_state.scene_graph.nodes[object_id].centroid)
+        response = await communication.ask_user(f"The robot would like to inspect object with id {object_id} and centroid {centroid_pose} with a gaze. Do you want to proceed? Please enter exactly 'yes' if you want to proceed.")   
+        if response == "yes":
+            result = take_control_with_function(function=self._Inspect_Object_With_Gaze(), config=self.general_config, object_id=object_id, object_centroid_pose=centroid_pose)
+            
+            if result is not None:
+                color_image, depth_image = result
+                robot_state.image_state = color_image
+                robot_state.depth_image_state = depth_image
+                robot_state.save_image_state(f"inspection_object_{object_id}")
+                logging.info(f"Inspected object with id {object_id} and centroid {centroid_pose} successfully.")
+            else:
+                logging.info(f"Failed to inspect object with id {object_id} and centroid {centroid_pose}. Color and depth images are None.")
+        else:
+            await communication.inform_user("I will not move to the object.")
+
+        return None
 
         
     
