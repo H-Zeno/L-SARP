@@ -10,7 +10,7 @@ At the bottom of the script call take_control_with_function(f: ControlFunction, 
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Protocol, Optional
 import logging
 
 from bosdyn import client as bosdyn_client
@@ -53,7 +53,7 @@ from utils.singletons import (
     WorldObjectClientSingleton,
     reset_singletons,
 )
-from source.planner_core.robot_state import RobotStateSingleton
+from planner_core.robot_state import RobotStateSingleton
 
 frame_transformer = FrameTransformerSingleton()
 graph_nav_client = GraphNavClientSingleton()
@@ -81,7 +81,7 @@ ALL_SINGLETONS = (
 
 config = Config()
 
-class ControlFunction(typing.Protocol):
+class ControlFunction(Protocol):
     """
     This class defines all control functions. It gets as input all that you need for controlling the robot.
     :return: FrameTransformer, FrameName used for returning to origin

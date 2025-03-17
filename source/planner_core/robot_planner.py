@@ -38,16 +38,16 @@ from configs.agent_instruction_prompts import (
 )
 # from configs.plugin_configs import plugin_configs
 from configs.scenes_and_plugins_config import Scene
-from source.planner_core.robot_state import RobotStateSingleton
-from source.robot_plugins.item_interactions import ItemInteractionsPlugin
-from source.robot_plugins.navigation import NavigationPlugin
-from source.robot_plugins.inspection import InspectionPlugin
-from source.utils.agent_utils import invoke_agent, invoke_agent_group_chat
-# from robot_utils.frame_transformer import FrameTransformerSingleton
+from planner_core.robot_state import RobotStateSingleton
+from robot_plugins.item_interactions import ItemInteractionsPlugin
+from robot_plugins.navigation import NavigationPlugin
+from robot_plugins.inspection import InspectionPlugin
+from utils.agent_utils import invoke_agent, invoke_agent_group_chat
+from robot_utils.frame_transformer import FrameTransformerSingleton
 
 # Initialize robot state singleton
 robot_state = RobotStateSingleton()
-# frame_transformer = FrameTransformerSingleton()
+frame_transformer = FrameTransformerSingleton()
 
 config = Config()
 
@@ -332,8 +332,7 @@ class RobotPlanner:
             
         plan_generation_prompt = CREATE_TASK_PLANNER_PROMPT_TEMPLATE.format(goal=self.goal, 
                                                                              scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()), 
-                                                                             robot_position=str("(0,0,0)"))
-        # frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
+                                                                             robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)))
 
         logger.info("========================================")
         logger.info(f"Plan generation prompt: {plan_generation_prompt}")
@@ -395,8 +394,8 @@ class RobotPlanner:
                                                                         tasks_completed=', '.join(map(str, self.tasks_completed)), 
                                                                         planning_chat_history=self.planning_chat_history, 
                                                                         scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-                                                                        robot_position=str("(0,0,0)"))
-        # robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
+                                                                        robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)))
+        
 
         updated_plan_response, self.json_format_chat_history = await invoke_agent(agent=self.task_planner_agent, 
                                                                                   chat_history=self.json_format_chat_history,

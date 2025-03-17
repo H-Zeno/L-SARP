@@ -30,7 +30,7 @@ from typing import List
 from utils.recursive_config import Config
 from utils.coordinates import Pose2D, Pose3D, average_pose3Ds, pose_distanced
 
-from ..LostFound.src.graph_nodes import LightSwitchNode
+from source.LostFound.src.graph_nodes import LightSwitchNode
 
 
 # =============================================================================
@@ -39,7 +39,7 @@ from ..LostFound.src.graph_nodes import LightSwitchNode
 # frame_transformer = FrameTransformerSingleton()
 
 
-from source.planner_core.robot_state import RobotStateSingleton
+from planner_core.robot_state import RobotStateSingleton
 robot_state = RobotStateSingleton()
 
 # =============================================================================

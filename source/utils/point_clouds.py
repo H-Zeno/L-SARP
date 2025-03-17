@@ -241,7 +241,7 @@ def body_planning_front(
     vis_block: bool = False,       
 ) -> Pose3D:
     """
-    Plans a frontal position for the robot in front of a target pece of furniture.
+    Plans a frontal position for the robot in front of a target piece of furniture.
     """
     #target = target.as_ndarray()
 

@@ -51,7 +51,7 @@ robot_lease_client = RobotLeaseClientSingleton()
 world_object_client = WorldObjectClientSingleton()
 
 # Import the scene graph class
-from source.LostFound.src.scene_graph import SceneGraph
+from LostFound.src.scene_graph import SceneGraph
 
 @dataclass
 class RobotState:

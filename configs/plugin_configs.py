@@ -4,8 +4,8 @@ from pathlib import Path
 
 from planner_core.model_factories import OpenAiChatModelFactory, OpenAiModelFactory
 
-from source.retrieval_plugins.plugins_factory import PluginsFactory
-from source.planner_core.config_handler import ConfigHandler
+from retrieval_plugins.plugins_factory import PluginsFactory
+from planner_core.config_handler import ConfigHandler
 from configs.scenes_and_plugins_config import Scene
 
 plugins_dotenv = Path(".env_plugins")

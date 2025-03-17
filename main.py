@@ -15,15 +15,15 @@ from bosdyn import client as bosdyn_client
 
 # Local imports
 from configs.scenes_and_plugins_config import Scene
-from source.planner_core.robot_planner import RobotPlanner
-from source.planner_core.robot_state import RobotState, RobotStateSingleton
-from source.LostFound.src.scene_graph import get_scene_graph
-from source.utils.agent_utils import invoke_agent, invoke_agent_group_chat
-from source.utils.recursive_config import Config
-from source.robot_utils.base_LSARP import initialize_robot_connection, spot_initial_localization, power_on, safe_power_off
+from planner_core.robot_planner import RobotPlanner
+from planner_core.robot_state import RobotState, RobotStateSingleton
+from LostFound.src.scene_graph import get_scene_graph
+from utils.agent_utils import invoke_agent, invoke_agent_group_chat
+from utils.recursive_config import Config
+from robot_utils.base_LSARP import initialize_robot_connection, spot_initial_localization, power_on, safe_power_off
 
 from utils.singletons import RobotLeaseClientSingleton
-from source.robot_utils.frame_transformer import FrameTransformerSingleton
+from robot_utils.frame_transformer import FrameTransformerSingleton
 
 # Initialize singletons
 robot_state = RobotStateSingleton()
@@ -59,23 +59,34 @@ async def main():
         raise ValueError(f"Selected active scene '{active_scene}' (mentioned in config.yaml) not found in Scene enum")
     logger.info(f"Loading robot planner configurations for scene: '{active_scene.value}'")
 
-    # path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
-    # if not path_to_scene_data.exists():
-    #     raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
-    # endregion Scene Setup
-    robot_planner = RobotPlanner(scene=active_scene)
+    path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
+    if not path_to_scene_data.exists():
+        raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
 
     base_path = config.get_subpath("prescans")
     ending = config["pre_scanned_graphs"]["high_res"]
     SCAN_DIR = os.path.join(base_path, ending)
 
+    # Loading/computing the scene graph
+    scene_graph_path = Path(path_to_scene_data/ active_scene_name / "full_scene_graph.pkl")
+    scene_graph_json_path = Path(path_to_scene_data/ active_scene_name / "scene_graph.json")
     logging.info(f"Loading scene graph from {SCAN_DIR}. This may take a few seconds...")
-    scene_graph = get_scene_graph(SCAN_DIR, drawers=True, light_switches=True)
+    scene_graph = get_scene_graph(SCAN_DIR, graph_save_path=scene_graph_path, drawers=False, light_switches=True, vis_block=True)
+    scene_graph.save_as_json(scene_graph_json_path)
+
     
+    # Process existing predefined goals
+    goals_path = Path("configs/goals.json")  # Convert string to Path object
+    # Create timestamp for the responses file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # responses_path = path_to_scene_data / f"responses_{timestamp}.json"
+    responses = {}
+    separator = "======================="
+
     ############################################################
     # Start the connection to the robot
     ############################################################
-    initialize_robot_connection()
+    initialize_robot_connection()   
 
     with bosdyn_client.lease.LeaseKeepAlive(
         robot_lease_client, must_acquire=True, return_at_exit=True
@@ -83,8 +94,9 @@ async def main():
         power_on()
         spot_initial_localization()
 
-        # Initialze the robot state with the pre-computed scene graph
-        robot_state.set_instance(RobotState(scene_graph=scene_graph))
+         # Initialze the robot state with the scene graph
+        robot_planner = RobotPlanner(scene=active_scene)
+        robot_state.set_instance(RobotState(scene_graph_object=scene_graph))
 
         ### Online Live Instruction ###
         if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -136,7 +148,6 @@ async def main():
                 logger.info(separator)
                 logger.info(goal_text)
 
-
                 task_completion_prompt_template = """
                 It is your job to complete the following task: {task}
                 
@@ -145,12 +156,37 @@ async def main():
                 Here is the scene graph:
                 {scene_graph}
                 
+                Here is the robot's current position:
+                {robot_position}
                 """
-                # Here is the robot's current position:
-                # {robot_position}
-                
+
                 # Set the goal and create the initial plan
-                await robot_planner.set_goal(goal)
+                time_before = datetime.now()
+                initial_plan, chain_of_thought = await robot_planner.create_task_plan_from_goal(goal)
+                time_after = datetime.now()
+                inference_time = time_after - time_before
+                logger.info(f"Time taken for inference: {inference_time}")
+
+                goal_response = {'inference_time (seconds)': str(inference_time.seconds), 'zero_shot_plan': initial_plan, 'chain_of_thought': chain_of_thought}
+
+                # Save the initial plan that is generated
+                plan_gen_save_path = Path(path_to_scene_data / active_scene_name / "initial_plans.json")
+                plan_gen_save_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Create the empty json file if it does not exist
+                if not plan_gen_save_path.exists():
+                    with open(plan_gen_save_path, 'w') as file:
+                        json.dump({}, file)
+
+                with open(plan_gen_save_path, 'r') as file:
+                    existing_data = json.load(file)
+                    existing_goal_responses = existing_data.get(goal, {})
+                    existing_goal_responses[robot_planner.task_planner_agent.service_id] = goal_response
+                    existing_data[goal] = existing_goal_responses
+                    new_data = json.dumps(existing_data, indent=2)
+
+                with open(plan_gen_save_path, 'w') as file:
+                    file.write(new_data)
 
                 # Main Agentic Loop
                 while True:
@@ -159,17 +195,19 @@ async def main():
                     for task in robot_planner.plan["tasks"]:
                         robot_planner.task = task
 
+                        print(f"This is the current robot frame: {robot_state.frame_name}")
                         # Execute the task
                         task_execution_prompt = task_completion_prompt_template.format(task=task, 
-                                                                                       plan=robot_planner.plan, 
-                                                                                       scene_graph=robot_state.scene_graph.scene_graph_to_json())
-                             #                                                          robot_position=frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
+                                                                                        plan=robot_planner.plan, 
+                                                                                        scene_graph=str(scene_graph.scene_graph_to_dict()),
+                                                                                        robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)))
+                                                                                        
 
                         task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, 
-                                                                                                     chat_history=ChatHistory(),
-                                                                                                     input_text_message=task_execution_prompt, 
-                                                                                                     input_image_message=robot_state.get_current_image_content(),
-                                                                                                     debug=debug)
+                                                                                                        chat_history=ChatHistory(),
+                                                                                                        input_text_message=task_execution_prompt, 
+                                                                                                        input_image_message=robot_state.get_current_image_content(),
+                                                                                                        debug=debug)
 
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned == True:

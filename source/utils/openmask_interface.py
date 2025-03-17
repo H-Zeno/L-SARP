@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import zipfile
@@ -96,9 +97,16 @@ def get_mask_points(item: str, config, idx: int = 0, vis_block: bool = False):
     pcd_path = os.path.join(
         config.get_subpath("aligned_point_clouds"), pcd_name, "scene.ply"
     )
+    try:
+        features = np.load(feat_path)
+        masks = np.load(mask_path)
 
-    features = np.load(feat_path)
-    masks = np.load(mask_path)
+    except FileNotFoundError:
+        logging.info("Mask clip features not found. Running OpenMask now.")
+        get_mask_clip_features()
+        features = np.load(feat_path)
+        masks = np.load(mask_path)
+
     item = item.lower()
 
     features, feat_idx = np.unique(features, axis=0, return_index=True)

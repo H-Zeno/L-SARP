@@ -17,7 +17,9 @@ from utils import recursive_config
 from utils.importer import PointCloud
 from utils.point_clouds import icp
 
-SAVE_OPENMASK3D = False
+config = recursive_config.Config()
+
+SAVE_OPENMASK3D = config["pre_scanned_graphs"]["save_openmask3d_features"]
 
 
 def fetch_paths(

@@ -42,7 +42,7 @@ from planner_core.interfaces import AbstractLlmChat
 from LostFound.src.graph_nodes import LightSwitchNode, DrawerNode, ObjectNode
 from LostFound.src.scene_graph import SceneGraph
 
-from source.planner_core.robot_state import RobotStateSingleton
+from planner_core.robot_state import RobotStateSingleton
 
 
 robot_state = RobotStateSingleton()

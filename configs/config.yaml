@@ -10,7 +10,6 @@ note: 'Language-based Scene Aware Robot Planner'
 
 path_to_data: 'data/'
 
-
 robot_planner_settings:
   active_scene: 'SEMANTIC_CORNER_WITH_BED' # needs to be in all caps, see misc/scenes_and_plugins_config.py
   task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"
@@ -20,6 +19,8 @@ robot_planner_settings:
 
 robot_parameters:
   verbose: False
+  H_FOV: 82
+  V_FOV: 140
 
 # device on which to train
 device: 'cuda'
@@ -31,11 +32,11 @@ pre_scanned_graphs:
   low_res: '12_03_2025'
   high_res: '12_03_2025'
   draw_point_clouds: false # Set to true to enable point cloud visualization in the alignment script
+  save_openmask3d_features: true # Needs to be true for the drawer detection to work
 
 # paths are relative from project_root_directory
 subpaths:
   cache: 'cache/'
-
   logs: 'data/logs/'
   output: 'output/'
   resume_from: 'path/to/weights'
