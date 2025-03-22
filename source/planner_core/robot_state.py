@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import tempfile
 import time
+import numpy as np
 from dataclasses import dataclass, field
 from typing import Optional, Union
 from PIL import Image
@@ -93,6 +94,13 @@ class RobotState:
         
         self.current_room: str = "unknown" # Can be loaded from the scene configuration file
         
+    def set_image_state(self, image: np.ndarray) -> None:
+        """Set the current image state."""
+        self.image_state = image
+    
+    def set_depth_image_state(self, depth_image: np.ndarray) -> None:
+        """Set the current depth image state."""
+        self.depth_image_state = depth_image
 
     def save_image_state(self, image_description: Optional[str] = None) -> None:
         save_dir = Path(self.config["robot_planner_settings"]["path_to_scene_data"]) / self.config["robot_planner_settings"]["active_scene"] / "images"
@@ -123,7 +131,7 @@ class RobotState:
     def get_current_image_content(self) -> ImageContent:
         """Converts the image_state to an ImageContent instance."""
 
-        if not self.image_state:
+        if self.image_state is None or len(self.image_state.shape) == 0:
             print("No image state available.")
             return None
         

@@ -46,11 +46,7 @@ debug = True  # This could be moved to config
 if debug:
     logging.getLogger().setLevel(logging.DEBUG)
 
-
-#region Config Loading
 config = Config()
-#endregion
-
 
 async def main():
   

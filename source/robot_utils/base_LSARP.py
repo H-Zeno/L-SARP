@@ -148,6 +148,8 @@ def take_control_with_function(
         *args,
         **kwargs,
     )
+    
+    return return_values
 
 def initialize_robot_connection():
     """ 1. Generate a Robot object

@@ -56,9 +56,13 @@ class InspectionPlugin:
     general_config = Config()
     global object_interaction_config
     object_interaction_config = Config("light_switch_configs")
-    # stand_distance = object_interaction_config["STAND_DISTANCE"]
     
     class _Inspect_Object_With_Gaze(ControlFunction):
+        def __init__(self):
+            super().__init__()
+            # self.color_image = None
+            # self.depth_image = None
+
         def __call__(
             self,
             config: Config, 
@@ -66,25 +70,62 @@ class InspectionPlugin:
             object_centroid_pose: Pose3D,
             *args,
             **kwargs,
-        ) -> Optional[tuple[np.ndarray, np.ndarray]]:
+        ) -> bool:  # Return success/failure flag instead of the actual images
+            try:
+                logging.info("Starting object inspection with gaze")
+                
+                set_gripper_camera_params('1920x1080')
+                carry()
+                gaze(object_centroid_pose, robot_state.frame_name, gripper_open=True)
+                
+                # Get images
+                rgbd_response = get_camera_rgbd(
+                    in_frame="image",
+                    vis_block=False, 
+                    cut_to_size=False,
+                )
+                
+                # Validate response
+                if not rgbd_response or len(rgbd_response) < 2:
+                    logging.error(f"Invalid RGBD response: got {len(rgbd_response) if rgbd_response else 0} items")
+                    return False
+                
+                # Unpack the response
+                depth_tuple = rgbd_response[0]
+                color_tuple = rgbd_response[1]
+                
+                # Validate tuples
+                if len(depth_tuple) != 2 or len(color_tuple) != 2:
+                    logging.error("Invalid response format from camera")
+                    return False
+                    
+                depth_image, depth_response = depth_tuple
+                color_image, color_response = color_tuple
+                
+                # Validate images
+                if depth_image is None or color_image is None:
+                    logging.error("Received None for depth or color image")
+                    return False
+                
+                stow_arm()
+                logging.info("Successfully captured images")
+                logging.info(f"Captured images: color_shape={color_image.shape}, depth_shape={depth_image.shape}")
+                
+                # Store in robot state
+                robot_state.set_image_state(color_image)
+                robot_state.set_depth_image_state(depth_image)
 
-            set_gripper_camera_params('1920x1080')
-            carry()
-            gaze(object_centroid_pose, robot_state.frame_name, gripper_open=True)
-
-            depth_image_response, color_response = get_camera_rgbd(
-                in_frame="image",
-                vis_block=False,
-                cut_to_size=False,
-            )
-            stow_arm()
-
-            # Validate the responses
-            if color_response is None or len(color_response) == 0 or color_response[0] is None:
-                logging.error("Failed to capture color image. color_response is None.")
-                return None
-
-            return color_response[0], depth_image_response[0]
+                if robot_state.image_state is None or robot_state.depth_image_state is None:
+                    logging.error("Failed to save images to robot state")
+                    return False
+                
+                robot_state.save_image_state(f"inspection_object_{object_id}")
+                return True  # Return success flag
+                
+            except Exception as e:
+                logging.error(f"Error in _Inspect_Object_With_Gaze: {str(e)}")
+                stow_arm()  # Always try to return to a safe position
+                return False
 
 
     class _Calculate_LightSwitch_Poses(ControlFunction):
@@ -115,26 +156,33 @@ class InspectionPlugin:
 
     @kernel_function(description="After having navigated to an object/furniture, you can call this function to inspect the object with gaze and save the image to your memory.")
     async def inspect_object_with_gaze(self, object_id: Annotated[int, "ID of the object in the scene graph"]) -> None:
-        
+        # Check if object exists in scene graph
+        if object_id not in robot_state.scene_graph.nodes:
+            await communication.inform_user(f"Object with ID {object_id} not found in scene graph.")
+            return None
+            
         centroid_pose = Pose3D(robot_state.scene_graph.nodes[object_id].centroid)
         response = await communication.ask_user(f"The robot would like to inspect object with id {object_id} and centroid {centroid_pose} with a gaze. Do you want to proceed? Please enter exactly 'yes' if you want to proceed.")   
+        
         if response == "yes":
-            result = take_control_with_function(function=self._Inspect_Object_With_Gaze(), config=self.general_config, object_id=object_id, object_centroid_pose=centroid_pose)
+            # Create an instance we can reference after execution
+            inspection_func = self._Inspect_Object_With_Gaze()
             
-            if result is not None:
-                color_image, depth_image = result
-                robot_state.image_state = color_image
-                robot_state.depth_image_state = depth_image
-                robot_state.save_image_state(f"inspection_object_{object_id}")
-                logging.info(f"Inspected object with id {object_id} and centroid {centroid_pose} successfully.")
-            else:
-                logging.info(f"Failed to inspect object with id {object_id} and centroid {centroid_pose}. Color and depth images are None.")
+            # Call function and get success/failure flag
+            logging.info("Calling take_control_with_function")
+            take_control_with_function(
+                function=inspection_func, 
+                config=self.general_config, 
+                object_id=object_id,
+                object_centroid_pose=centroid_pose
+            )
+            logging.info(f"Completed inspecting of object with id {object_id} and centroid {centroid_pose} successfully (including saving to robot state).")
         else:
-            await communication.inform_user("I will not move to the object.")
-
+            await communication.inform_user("I will not inspect the object.")
+            
         return None
 
-        
-    
-    
+
+
+
 
