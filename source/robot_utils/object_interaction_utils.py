@@ -9,14 +9,16 @@ from utils.vis import show_two_geometries_colored
 import json
 import math
 import numpy as np
-from utils.point_clouds import add_coordinate_system, body_planning_front, body_planning, get_coordinates_from_item
+from utils.point_clouds import add_coordinate_system, body_planning_front, body_planning
 from utils.openmask_interface import get_mask_points
 import open3d as o3d
 
 from planner_core.robot_state import RobotStateSingleton
+from robot_utils.frame_transformer import FrameTransformerSingleton
 
 from utils.mask3D_interface import _get_list_of_items
 robot_state = RobotStateSingleton()
+frame_transformer = FrameTransformerSingleton()
 
 config = Config()
 
@@ -50,13 +52,15 @@ def _get_distance_to_shelf(index: int=0, load_from_json=False) -> tuple:
         furniture_dimensions = robot_state.scene_graph.nodes[index].dimensions
 
     # calculate robot distance to furniture
-    circle_radius_width = (furniture_dimensions[0] + 0.1) / (2 * math.tan(np.radians(H_FOV / 2))) + furniture_dimensions[1] / 2
+    circle_radius_width = (furniture_dimensions[0] + 0.1) / (2 * math.tan(np.radians(H_FOV / 2))) + furniture_dimensions[1] / 2 
     circle_radius_height = (furniture_dimensions[2] + 0.1) / (2 * math.tan(np.radians(V_FOV / 2))) + furniture_dimensions[1] / 2
+    min_distance = 0.5
+
     if len(furniture_dimensions) < 3:
         raise ValueError("Invalid furniture dimensions: Expected at least 3 elements.")
 
     logging.info(f"Calculated distance to shelf: {max(circle_radius_width, circle_radius_height)} and the furniture dimensions are {furniture_dimensions}")
-    return max(circle_radius_width, circle_radius_height), furniture_centroid
+    return max(circle_radius_width, circle_radius_height, min_distance), furniture_centroid
 
 
 def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.ndarray) -> np.ndarray:
@@ -84,10 +88,16 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
                 dim2 = (axis + 2) % 3
                 area = extents[dim1] * extents[dim2]
 
-                objects_in_front = robot_state.scene_graph.get_nodes_in_front_of_object_face(cabinet_center, normal)
-
+                # Snap normal to cardinal direction in XY plane
+                snapped_normal = snap_to_cardinal(normal)
+                
+                objects_in_front = robot_state.scene_graph.get_nodes_in_front_of_object_face(cabinet_center, snapped_normal)
+                
+                logging.info(f"Found vertical face with original normal {normal}, snapped to {snapped_normal}. Area: {area}. Objects in front: {objects_in_front}")
+                
                 vertical_faces.append({
-                    'normal': normal,
+                    'normal': snapped_normal,
+                    'original_normal': normal,
                     'area': area,
                     'objects_in_front': objects_in_front
                 })
@@ -95,25 +105,71 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
     if not vertical_faces:
         raise ValueError("No vertical faces found in shelf structure")
     
-    # remove the faces that are not accessible by the robot (e.g. backside, other objects in front of the shelf)
-    # + take te face that is closest to the robot
-
-    # 1. find the objects that are in a radius of _get_distance_to_shelf(index)[0] from the centroid of the shelf
-    # objects_in_front_of_face = []
-    # for face_normal, _ in vertical_faces:
-    #     objects_in_radius += r
-
-    # 2. remove the faces that have objects in front of them / are not accessible by the robot
-    logging.info(f'vertical faces of a furniture (cabinet/shelf): {str(vertical_faces)}')
-
+    # Remove faces that have objects in front of them
     valid_vertical_faces = [vertical_face for vertical_face in vertical_faces if not vertical_face['objects_in_front']]
 
-    # select largest vertical face as front
-    front = max(valid_vertical_faces, key=lambda x: x['area'])
+    # If there are valid faces without objects, choose the largest one
+    if valid_vertical_faces:
+        # select largest vertical face as front
+        front = max(valid_vertical_faces, key=lambda x: x['area'])
+    else:
+        # All faces have objects in front - get the face with normal pointing most toward robot
+        try:
+            robot_pos = frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
+            
+            # Direction vector from cabinet to robot
+            direction_to_robot = robot_pos - cabinet_center
+            direction_to_robot = direction_to_robot / np.linalg.norm(direction_to_robot)
+            
+            # Calculate the alignment of each face normal with the direction to the robot
+            for face in vertical_faces:
+                # Dot product - higher value means better alignment toward robot
+                face['alignment_to_robot'] = np.dot(face['normal'], direction_to_robot)
+            
+            logging.warning("All vertical faces have objects in front of them. Selecting the face pointing most toward robot.")
+            front = max(vertical_faces, key=lambda x: x['alignment_to_robot'])
+        except Exception as e:
+            # Fallback if robot position is unavailable
+            logging.warning(f"Unable to get robot position: {e}. Selecting face with fewest obstacles.")
+            front = min(vertical_faces, key=lambda x: len(x['objects_in_front']))
 
     # To be more accurate, this should be extended to the face with the most free volume in front of it (for 1 meter distance)
     return front['normal']
+
+def snap_to_cardinal(normal: np.ndarray) -> np.ndarray:
+    """
+    Snaps a normal vector to the closest cardinal direction in the XY plane.
     
+    Args:
+        normal: The normal vector to snap
+        
+    Returns:
+        The snapped normal vector (aligned to X or Y axis)
+    """
+    # Get the XY component and normalize it
+    normal_xy = np.array([normal[0], normal[1], 0])
+    if np.linalg.norm(normal_xy) < 1e-6:  # Handle zero vector case
+        return np.array([1, 0, 0])  # Default to X-axis
+    
+    normal_xy = normal_xy / np.linalg.norm(normal_xy)
+    
+    # Determine the closest cardinal direction
+    # We check which cardinal direction has the highest dot product
+    cardinal_directions = [
+        np.array([1, 0, 0]),   # +X
+        np.array([0, 1, 0]),   # +Y
+        np.array([-1, 0, 0]),  # -X
+        np.array([0, -1, 0]),  # -Y
+    ]
+    
+    dot_products = [np.dot(normal_xy, cardinal) for cardinal in cardinal_directions]
+    best_idx = np.argmax(np.abs(dot_products))
+    
+    # Use the sign of the dot product to determine direction
+    if dot_products[best_idx] < 0:
+        return -cardinal_directions[best_idx]  # Return opposite direction
+    else:
+        return cardinal_directions[best_idx]
 
 def get_pose_in_front_of_furniture(index: int=0, object_description="cabinet, shelf") -> tuple:
     '''
@@ -129,11 +185,12 @@ def get_pose_in_front_of_furniture(index: int=0, object_description="cabinet, sh
     radius = max(0.8, radius)
 
     furniture_sem_label = robot_state.scene_graph.nodes[index].sem_label
+    logging.info(f"Looking for furniture with semantic label: {furniture_sem_label}")
 
     mask_path_base = config.get_subpath("masks")
     pred_masks_base_path = config.get_subpath("prescans")
     ending = config["pre_scanned_graphs"]["high_res"]
-    mask_csv_folder_path = os.path.join(mask_path_base, ending)
+    # mask_csv_folder_path = os.path.join(mask_path_base, ending)
     pred_masks_folder = os.path.join(pred_masks_base_path, ending)
 
     pc_path = config.get_subpath("aligned_point_clouds")
@@ -141,7 +198,7 @@ def get_pose_in_front_of_furniture(index: int=0, object_description="cabinet, sh
     pc_path = os.path.join(str(pc_path), ending, "scene.ply")
 
     # logging.info("Starting the process of finding the best poses in front of the object.")
-    df = _get_list_of_items(str(mask_csv_folder_path))
+    df = _get_list_of_items(str(pred_masks_folder))
 
     # get all entries for our item label
     entries = df[df["class_label"] == furniture_sem_label]
@@ -216,6 +273,7 @@ def get_pose_in_front_of_furniture(index: int=0, object_description="cabinet, sh
 
     front_normal = _get_shelf_front(furniture_point_cloud, furniture_centroid)
 
+    # Calculate robot position based on furniture position and normal direction
     body_position_3d = furniture_centroid + front_normal * radius
     body_pose = Pose2D((body_position_3d[0], body_position_3d[1]))
     direction_towards_object = -front_normal
@@ -246,7 +304,7 @@ def get_best_poses_in_front_of_object(index: int, object_description: str) -> li
     mask_path_base = config.get_subpath("masks")
     pred_masks_base_path = config.get_subpath("prescans")
     ending = config["pre_scanned_graphs"]["high_res"]
-    mask_csv_folder_path = os.path.join(mask_path_base, ending)
+    # mask_csv_folder_path = os.path.join(mask_path_base, ending)
     pred_masks_folder = os.path.join(pred_masks_base_path, ending)
 
     pc_path = config.get_subpath("aligned_point_clouds")
@@ -256,7 +314,7 @@ def get_best_poses_in_front_of_object(index: int, object_description: str) -> li
     # logging.info(f"Trying to find the item cloud of the object with description {object_description}.")
     
     logging.info("Starting the process of finding the best poses in front of the object.")
-    df = _get_list_of_items(str(mask_csv_folder_path))
+    df = _get_list_of_items(str(pred_masks_folder))
 
     # get all entries for our item label
     entries = df[df["class_label"] == item_sem_label]

@@ -100,6 +100,7 @@ class NavigationPlugin:
         logging.info(f"Object with id {object_id} has label {sem_label}.")
         if sem_label in ["shelf", "cabinet", "coffee table", "tv stand"]:
             object_center_openmask, object_interaction_pose = get_pose_in_front_of_furniture(index=object_id, object_description=sem_label)
+        
         else:
             object_targets = get_best_poses_in_front_of_object(index=object_id, object_description=object_description)
             object_interaction_pose = object_targets[0][0]

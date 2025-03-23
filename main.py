@@ -69,7 +69,7 @@ async def main():
     scene_graph_path = Path(path_to_scene_data/ active_scene_name / "full_scene_graph.pkl")
     scene_graph_json_path = Path(path_to_scene_data/ active_scene_name / "scene_graph.json")
     logging.info(f"Loading scene graph from {SCAN_DIR}. This may take a few seconds...")
-    scene_graph = get_scene_graph(SCAN_DIR, graph_save_path=scene_graph_path, drawers=False, light_switches=True, vis_block=False)
+    scene_graph = get_scene_graph(SCAN_DIR, graph_save_path=scene_graph_path, drawers=False, light_switches=True, vis_block=True)
     scene_graph.save_as_json(scene_graph_json_path)
 
     
@@ -195,8 +195,9 @@ async def main():
                     # Execute the plan of action, with new
                     for task in robot_planner.plan["tasks"]:
                         robot_planner.task = task
-
+                        logger.info(f"{separator}\nExecuting task: {task} \n{separator}")
                         print(f"This is the current robot frame: {robot_state.frame_name}")
+
                         # Execute the task
                         task_execution_prompt = task_completion_prompt_template.format(task=task, 
                                                                                         plan=robot_planner.plan, 
@@ -204,13 +205,15 @@ async def main():
                                                                                         scene_graph=str(scene_graph.scene_graph_to_dict()),
                                                                                         robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)))
                                                                                         
-
                         task_completion_response, task_completion_chat_history  = await invoke_agent(robot_planner.task_execution_agent, 
                                                                                                         chat_history=task_completion_chat_history,
                                                                                                         input_text_message=task_execution_prompt, 
                                                                                                         input_image_message=robot_state.get_current_image_content(),
                                                                                                         debug=debug)
                         
+                        logger.info(f"Task completion response: {task_completion_response}")
+
+
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned == True:
                             robot_planner.replanned = False
