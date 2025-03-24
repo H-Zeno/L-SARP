@@ -20,7 +20,7 @@ from robot_utils.advanced_movement import push_light_switch, turn_light_switch, 
 from robot_utils.frame_transformer import FrameTransformerSingleton
 frame_transformer = FrameTransformerSingleton()
 from robot_utils.base_LSARP import ControlFunction , take_control_with_function
-from robot_utils.object_interaction_utils import get_best_poses_in_front_of_object, get_pose_in_front_of_furniture
+from robot_utils.object_interaction_utils import get_best_pose_in_front_of_object, get_pose_in_front_of_furniture
 
 from utils.light_switch_interaction import LightSwitchDetection, LightSwitchInteraction
 from utils.pose_utils import calculate_light_switch_poses
@@ -53,9 +53,8 @@ logger = logging.getLogger("plugins")
 
 class NavigationPlugin:
     general_config = Config()
-    global object_interaction_config
-    object_interaction_config = Config("light_switch_configs")
-    stand_distance = object_interaction_config["STAND_DISTANCE"]
+    object_interaction_config = Config("object_interaction_configs")
+    inspection_distance = object_interaction_config["INSPECTION_DISTANCE"]
     
     class _Move_To_Object(ControlFunction):
         def __call__(
@@ -94,22 +93,21 @@ class NavigationPlugin:
     @kernel_function(description="function to call when the robot needs to navigate from place A (coordinates) to place B (coordinates)", name="RobotNavigation")
     async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
 
-        # If the object is a shelf:
         object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
         sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label)
         logging.info(f"Object with id {object_id} has label {sem_label}.")
-        if sem_label in ["shelf", "cabinet", "coffee table", "tv stand"]:
-            object_center_openmask, object_interaction_pose = get_pose_in_front_of_furniture(index=object_id, object_description=sem_label)
         
+        furniture_labels = self.general_config["semantic_labels"]["furniture"]
+        if sem_label in furniture_labels:
+            object_center_openmask, object_interaction_pose = get_pose_in_front_of_furniture(index=object_id, min_distance=self.inspection_distance,object_description=sem_label)
         else:
-            object_targets = get_best_poses_in_front_of_object(index=object_id, object_description=object_description)
-            object_interaction_pose = object_targets[0][0]
-
+            object_interaction_pose = get_best_pose_in_front_of_object(index=object_id, object_description=object_description, min_interaction_distance=self.inspection_distance)
+        
         await communication.inform_user(f"Moving to object with id {object_id}, label {robot_state.scene_graph.nodes[object_id].sem_label} and centroid {object_centroid_pose}."
                                         f"The object interaction pose is: {object_interaction_pose}"
                                         f"The current position of the robot is {frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)}")
         
-        response = await communication.ask_user("Do you want me to move to the object? Please enter exactly 'yes' if you want me to move to the object.")   
+        response = await communication.ask_user("Do you want me to move to the object? Please enter exactly 'yes' if you want me to move to the object.")
         if response == "yes":
             take_control_with_function(config=self.general_config, function=self._Move_To_Object(), object_interaction_pose=object_interaction_pose, body_assist=True)
             logging.info(f"Robot moved to the object with id {object_id}")
@@ -119,6 +117,6 @@ class NavigationPlugin:
         return None
 
         
-    
-    
+
+
 

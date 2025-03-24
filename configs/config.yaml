@@ -21,9 +21,14 @@ robot_parameters:
   verbose: False
   H_FOV: 82
   V_FOV: 140
+  
 
 # device on which to train
 device: 'cuda'
+
+# Semantic label categories for scene understanding
+semantic_labels:
+  furniture: ["shelf", "cabinet", "coffee table", "tv stand", "table", "desk", "dresser", "bookshelf", "nightstand", "end table"]
 
 pre_scanned_graphs:
   base_fiducial_id: 52

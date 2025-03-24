@@ -55,7 +55,7 @@ class InspectionPlugin:
     """This plugin contains functions to inspect certain objects in the scene."""
     general_config = Config()
     global object_interaction_config
-    object_interaction_config = Config("light_switch_configs")
+    object_interaction_config = Config("object_interaction_configs")
     
     class _Inspect_Object_With_Gaze(ControlFunction):
         def __init__(self):

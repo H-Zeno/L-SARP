@@ -50,7 +50,7 @@ from utils.bounding_box_refinement import refine_bounding_box
 from random import uniform
 
 # Load configuration
-config = Config("light_switch_configs")
+config = Config("object_interaction_configs")
 
 # Get workspace root for absolute paths
 WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))

@@ -6,6 +6,7 @@ import logging
 import time
 import os
 import copy
+from dotenv import dotenv_values
 import numpy as np
 from pathlib import Path
 from typing import Annotated, Optional, Set
@@ -15,7 +16,7 @@ from typing import Annotated, Optional, Set
 from bosdyn.client import Sdk
 from bosdyn.api.image_pb2 import ImageResponse
 from robot_utils.basic_movements import (
-    carry_arm, stow_arm, move_body)
+    carry_arm, gaze, stow_arm, move_body)
 from robot_utils.advanced_movement import push_light_switch, turn_light_switch, move_body_distanced, push
 from robot_utils.frame_transformer import FrameTransformerSingleton
 from robot_utils.video import (
@@ -23,6 +24,7 @@ from robot_utils.video import (
     frame_coordinate_from_depth_image, select_points_from_bounding_box
 )
 from robot_utils.base_LSARP import ControlFunction, take_control_with_function
+from robot_utils.object_interaction_utils import get_best_pose_in_front_of_object
 from robot_plugins.communication import CommunicationPlugin
 from utils.light_switch_interaction import LightSwitchDetection, LightSwitchInteraction
 from utils.pose_utils import calculate_light_switch_poses
@@ -46,31 +48,28 @@ from LostFound.src.scene_graph import SceneGraph
 from planner_core.robot_state import RobotStateSingleton
 
 robot_state = RobotStateSingleton()
+frame_transformer = FrameTransformerSingleton()
 communication = CommunicationPlugin()
 
-
 logger = logging.getLogger("plugins")
-# POSE_CENTER = Pose2D(coordinates=(1.5, 0))
-# POSE_CENTER.set_rot_from_angle(180, degrees=True)
-
+config = Config("object_interaction_configs")
 
 class ItemInteractionsPlugin:
-    def __init__(self): 
-        self.config = Config("light_switch_configs")
-        self.light_switch_detection = LightSwitchDetection()
-        self.frame_transformer = FrameTransformerSingleton()
-        self.light_switch_interaction = LightSwitchInteraction(self.frame_transformer, self.config)
-        self.vis_block = True
-
+    
     class _Push_Light_Switch(ControlFunction):
+        light_switch_detection = LightSwitchDetection()
+        light_switch_interaction = LightSwitchInteraction(frame_transformer, config)
+        planner_settings = dotenv_values(".env_core_planner")
+
         def __call__(
             self,
             config: Config,
-            light_switch_object_id: LightSwitchNode,
+            light_switch_object_id: int,
             *args,
             **kwargs,
         ) -> None:
             
+            light_switch_node = robot_state.scene_graph.nodes[light_switch_object_id]
 
             # #################################
             # # Check lamp states pre interaction
@@ -78,70 +77,72 @@ class ItemInteractionsPlugin:
             # lamp_images_pre = self.light_switch_interaction.check_lamps(POSES_LAMPS, frame_name)
 
             #################################
-            # Move body to switch
-            #################################
-            light_switch_node = robot_state.scene_graph.nodes[light_switch_object_id]
-
-            light_switch_node.set_normal(np.array([0, -1, 0])) # HARDCODED normal (for now)
-                
-            body_to_switch_start_time = time.time()
-
-            pose = Pose3D(light_switch_node.centroid)
-            pose.set_rot_from_direction(light_switch_node.normal)
-
-            body_add_pose_refinement_right = Pose3D((-self.config["STAND_DISTANCE"], -0.00, -0.00))
-            body_add_pose_refinement_right.set_rot_from_rpy((0, 0, 0), degrees=True)
-            p_body = pose.copy() @ body_add_pose_refinement_right.copy()
-
-            move_body(p_body.to_dimension(2), robot_state.frame_name)
-            logging.info(f"Moved body to switch")
-            
-            body_to_switch_end_time = time.time()
-            logging.info(f"Time to move body to switch: {body_to_switch_end_time - body_to_switch_start_time}")
-
-            #################################
             # Extend the arm to a neutral carrying position
             #################################
             carry_arm() 
+            switch_interaction_start_time = time.time()
 
+            #################################
+            # Gaze at the cabinet and get the depth and color images
+            # (The pose of the cabinet is necessary for the gaze at the cabinet)
+            #################################
+            set_gripper_camera_params('1920x1080')
+            time.sleep(1)
+            logging.info("The robot now will gaze at the light switch with the pose {light_switch_pose}.")
+            
+            gaze(Pose3D(light_switch_node.centroid), robot_state.frame_name, gripper_open=True)
+
+            depth_image_response, color_response = get_camera_rgbd(
+                in_frame="image",
+                vis_block=False,
+                cut_to_size=False,
+            )
+            set_gripper_camera_params('1280x720')
+
+            #################################
+            # Detect the light switch bounding boxes and poses in the scene
+            #################################
+            boxes = light_switch_detection.predict_light_switches(color_response[0], vis_block=True)
+            logging.info(f"INITIAL LIGHT SWITCH DETECTION")
+            logging.info(f"Number of detected switches: {len(boxes)}")
+            end_time_detection = time.time()
+
+            poses = calculate_light_switch_poses(boxes, depth_image_response, robot_state.frame_name, frame_transformer)
+            logging.info(f"Number of calculated poses: {len(poses)}")
+            end_time_pose_calculation = time.time()
+            logging.info(f"Pose calculation time: {end_time_pose_calculation - end_time_detection}")
+            light_switch_pose = poses[0]
+            
             #################################
             # refine handle position
             #################################
             refined_pose, refined_box, color_response = self.light_switch_interaction.get_average_refined_switch_pose(
-                pose, 
+                light_switch_pose, 
                 robot_state.frame_name, 
-                self.config["REFINEMENT_X_OFFSET"],
-                num_refinement_poses=self.config["NUM_REFINEMENT_POSES"],
-                num_refinement_max_tries=self.config["NUM_REFINEMENTS_MAX_TRIES"],
+                config["REFINEMENT_X_OFFSET"],
+                num_refinement_poses=config["NUM_REFINEMENT_POSES"],
+                num_refinement_max_tries=config["NUM_REFINEMENTS_MAX_TRIES"],
                 bounding_box_optimization=True
             )
-
-            # #################################
-            # # Push light switch (without affordance detection)
-            # #################################
-            # if refined_pose is not None:
-            #     push_light_switch(refined_pose, robot_state.frame_name, z_offset=True, forces=self.config["FORCES"])
-            # else:
-            #     logging.warning(f"Refined pose is None for switch")
-            #     logging.warning(f"Pushing light switch without refinement")
-            #     push_light_switch(pose, robot_state.frame_name, z_offset=True, forces=self.config["FORCES"])
-
-            # stow_arm()
             
             #################################
             # affordance detection
             #################################
             logging.info("affordance detection starting...")
-            affordance_dict = self.light_switch_detection.light_switch_affordance_detection(refined_box, color_response, 
-                                                    self.config["AFFORDANCE_DICT_LIGHT_SWITCHES"], self.config["gpt_api_key"])
+            affordance_dict = light_switch_detection.light_switch_affordance_detection(
+                refined_box, color_response, 
+                config["AFFORDANCE_DICT_LIGHT_SWITCHES"], self.planner_settings.get("OPENAI_API_KEY")
+            )
 
             #################################
             #  light switch interaction based on affordance
             #################################
-            switch_interaction_start_time = time.time()
-
-            offsets, switch_type = self.light_switch_interaction.determine_switch_offsets_and_type(affordance_dict, self.config["GRIPPER_HEIGHT"], self.config["GRIPPER_WIDTH"])
-            self.light_switch_interaction.switch_interaction(switch_type, refined_pose, offsets, robot_state.frame_name, self.config["FORCES"])
+            offsets, switch_type = self.light_switch_interaction.determine_switch_offsets_and_type(
+                affordance_dict, config["GRIPPER_HEIGHT"], config["GRIPPER_WIDTH"]
+            )
+            self.light_switch_interaction.switch_interaction(
+                switch_type, refined_pose, offsets, robot_state.frame_name, config["FORCES"]
+            )
             stow_arm()
             logging.info(f"Tried interaction with switch")
             
@@ -169,39 +170,68 @@ class ItemInteractionsPlugin:
             # # Copy lamp images for future use
             # lamp_images_pre = lamp_images_post.copy()
 
-            # # Logging
-            # logging.info(f"Interaction with switch finished")
-            # switch_interaction_end_time = time.time()
-            # logging.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
-            # end_time_total = time.time()
-            # logging.info(f"Total time per switch: {end_time_total - body_to_switch_start_time}")
+            # Logging
+            logging.info(f"Interaction with switch finished")
+            switch_interaction_end_time = time.time()
+            logging.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
 
-            # stow_arm()
+            stow_arm()
 
-            # #################################
-            # # Move back to the center of the scene  
-            # #################################
-            # move_body(POSE_CENTER, robot_state.frame_name)
-        
 
     @kernel_function(description="function to call to push a certain light switch present in the scene graph", name="push_light_switch")
-    async def push_light_switch(self, light_switch_object_id: Annotated[int, "The ID of the light switch object"]) -> None:
+    async def push_light_switch(self, light_switch_object_id: Annotated[int, "The ID of the light switch object"], 
+                                object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
+        
+        # Get object information from the scene graph
+        light_switch_node = robot_state.scene_graph.nodes[light_switch_object_id]
+        light_switch_centroid = light_switch_node.centroid
+        sem_label = robot_state.scene_graph.label_mapping.get(light_switch_node.sem_label, "light switch")
+        
+        logging.info(f"Light switch with ID {light_switch_object_id} has label {sem_label} and is at position {light_switch_centroid}")
+        
+        # Use the furniture labels from config when needed
+        light_switch_interaction_pose = get_best_pose_in_front_of_object(
+            light_switch_object_id, 
+            object_description=object_description, 
+            min_interaction_distance=config["LIGHT_SWITCH_DISTANCE"] 
+        )
 
-        config = Config()
-        light_switch_node_centroid = robot_state.scene_graph.nodes[light_switch_object_id].centroid
-        await communication.inform_user("The robot is about to push the light switch as position: " + str(light_switch_node_centroid))
+        light_switch_interaction_pose_2d = light_switch_interaction_pose.to_dimension(2)
 
-        response = await communication.ask_user("Do you want to proceed with the interaction? Please reply with 'yes' or 'no'.")
+        await communication.inform_user(f"The robot is about to move to the light switch interaction position at {light_switch_interaction_pose}")
+        response = await communication.ask_user("The robot would like to move to the light switch interaction position? Please enter exactly 'yes' if you want me to proceed.")
 
         if response == "yes":
-            take_control_with_function(config, function=self._Push_Light_Switch(), light_switch_object_id=light_switch_object_id)
+            body_to_object_start_time = time.time()
+
+            move_body(
+                pose=light_switch_interaction_pose_2d,
+                frame_name=robot_state.frame_name,
+            )
+
+            body_to_object_end_time = time.time()
+            logging.info(f"Moved spot succesfully to the light switch interaction pose. Time to move body to object: {body_to_object_end_time - body_to_object_start_time}")
+
+        else:
+            await communication.inform_user("The robot will not move to the light switch interaction position and will not continue the light switch interaction.")
+            return None
+
+        await communication.inform_user(f"The robot is now about to push the light switch at position: {light_switch_centroid}")
+        response = await communication.ask_user("Do you want me to push the light switch? Please enter exactly 'yes' if you want me to proceed.")
+        
+        if response == "yes":
+            take_control_with_function(
+                config=config,  # Changed from self.config to global config 
+                function=self._Push_Light_Switch(), 
+                light_switch_object_id=light_switch_object_id
+            )
+            logging.info(f"Light switch with ID {light_switch_object_id} pushed successfully")
+            await communication.inform_user("Light switch interaction completed.")
+
         else:
             await communication.inform_user("The robot will not push the light switch.")
-
-        logging.info("Light switch pushed")
-        
+            
         return None
-
 
     # @kernel_function(description="function to call to pick up a certain object", name="pick_up_object")
     # async def pick_up_object(self, object_node: ObjectNode) -> None:
