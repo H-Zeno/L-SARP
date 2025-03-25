@@ -1,6 +1,6 @@
-semantic-kernel==1.19.0
+semantic-kernel==1.26.1
 PyYAML==6.0.1
-openai==1.55.3
+openai==1.61
 torch==2.2.0
 numpy==1.25
 wandb==0.15.8
@@ -21,7 +21,7 @@ isort==5.12.0
 pylint==2.17.5
 open3d>=0.17.0
 Pillow==10.2.0
-scipy==1.10.1
+scipy==1.15.1
 matplotlib==3.7.2
 apriltag==0.0.16
 ikpy==3.3.4

@@ -75,7 +75,6 @@ class TaskPlannerResponse(BaseModel):
     tasks : List[TaskResponse]
 
 
-
 class RobotPlanner:
     """
     Class that handles the planning of the robot.
@@ -84,7 +83,6 @@ class RobotPlanner:
     def __init__(
         self, 
         scene: Scene,
-
     ) -> None:
         """
         Constructor for the RobotPlanner class that handles plugin initialization and planning.
@@ -92,10 +90,10 @@ class RobotPlanner:
         # Load settings
         self._planner_settings = dotenv_values(".env_core_planner")
 
-        # Set the configurations for the retrieval plugins
+        # Set the configurations for the scene
         self.scene = scene
-        # self._enabled_retrieval_plugins = self.scene.retrieval_plugins
-        # self._retrieval_plugins_configs = plugin_configs
+        self._enabled_retrieval_plugins = self.scene.retrieval_plugins
+        self._retrieval_plugins_configs = plugin_configs
 
         # Create the kernel
         self.kernel = Kernel()
@@ -114,25 +112,25 @@ class RobotPlanner:
         
         # Initialize the system
         self.setup_services()
-        # self.add_retrieval_plugins()
+        self.add_retrieval_plugins()
         self.add_action_plugins()
         self.add_planning_plugins()
         self.initialize_task_planner_agent()
         self.initialize_task_execution_agent()
         self.initialize_goal_completion_checker_agent()
 
-    # def add_retrieval_plugins(self) -> None:
-    #     """
-    #     Adds all the enabled plugins to the kernel.
-    #     Scenes_and_plugins_config.py contains the plugin configurations for each scene.
-    #     """
+    def add_retrieval_plugins(self) -> None:
+        """
+        Adds all the enabled plugins to the kernel.
+        Scenes_and_plugins_config.py contains the plugin configurations for each scene.
+        """
         
-    #     # Add Enabled Plugins to the kernel
-    #     for plugin_name in self._enabled_retrieval_plugins:
-    #         if plugin_name in self._retrieval_plugins_configs:
-    #             factory_func, args, kernel_name = self._retrieval_plugins_configs[plugin_name]
-    #             plugin = factory_func(*args)
-    #             self.kernel.add_plugin(plugin, plugin_name=kernel_name)
+        # Add Enabled Plugins to the kernel
+        for plugin_name in self._enabled_retrieval_plugins:
+            if plugin_name in self._retrieval_plugins_configs:
+                factory_func, args, kernel_name = self._retrieval_plugins_configs[plugin_name]
+                plugin = factory_func(*args)
+                self.kernel.add_plugin(plugin, plugin_name=kernel_name)
 
     def add_action_plugins(self) -> None:
         """
@@ -159,24 +157,21 @@ class RobotPlanner:
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="gpt4o",
             api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="gpt-4o-2024-11-20"))
-
-        # # Set up highly intelligent Google Gemini model for answering question
-        # self.kernel.add_service(GoogleAIChatCompletion(
-        #     service_id="gpt4o",
-        #     api_key=dotenv_values().get("GEMINI_API_KEY"),
-        #     gemini_model_id="gemini-2.0-flash"))
+            ai_model_id="gpt-4o-2024-11-20"
+        ))
 
         # Reasoning models
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="o3-mini",
             api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="o3-mini-2025-01-31"))
+            ai_model_id="o3-mini-2025-01-31"
+        ))
         
         self.kernel.add_service(OpenAIChatCompletion( 
             service_id="o1",
             api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="o1-2024-12-17"))
+            ai_model_id="o1-2024-12-17"
+        ))
         
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="deepseek-r1",
@@ -186,13 +181,13 @@ class RobotPlanner:
                 base_url="https://integrate.api.nvidia.com/v1"
             )
         ))
-
+        
         # Small and cheap model for the processing of certain user responses
         self.kernel.add_service(OpenAIChatCompletion(
             service_id="small_cheap_model",
             api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="gpt-4o-mini"))
-
+            ai_model_id="gpt-4o-mini"
+        ))
 
     def initialize_task_planner_agent(self) -> None:
         """
