@@ -182,6 +182,10 @@ class ItemInteractionsPlugin:
     async def push_light_switch(self, light_switch_object_id: Annotated[int, "The ID of the light switch object"], 
                                 object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
         
+        if config["robot_planner_settings"]["use_with_robot"] is not True:
+            logging.info("Pushed light switch in simulation (without robot).")
+            return None
+
         # Get object information from the scene graph
         light_switch_node = robot_state.scene_graph.nodes[light_switch_object_id]
         light_switch_centroid = light_switch_node.centroid

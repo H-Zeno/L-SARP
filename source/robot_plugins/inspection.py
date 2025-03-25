@@ -30,7 +30,7 @@ light_switch_detection = LightSwitchDetection()
 from utils.recursive_config import Config
 from utils.coordinates import Pose2D, Pose3D, average_pose3Ds, pose_distanced
 
-from source.LostFound.src.graph_nodes import LightSwitchNode
+from LostFound.src.graph_nodes import LightSwitchNode
 
 # =============================================================================
 # Singletons
@@ -128,43 +128,49 @@ class InspectionPlugin:
                 return False
 
 
-    class _Calculate_LightSwitch_Poses(ControlFunction):
-        def __call__(
-            self,
-            *args,
-            **kwargs,
-        ) -> List[Pose3D]:
+    # class _Calculate_LightSwitch_Poses(ControlFunction):
+    #     def __call__(
+    #         self,
+    #         *args,
+    #         **kwargs,
+    #     ) -> List[Pose3D]:
 
-            #################################
-            # Detect the light switch bounding boxes and poses in the scene
-            #################################
-            boxes = light_switch_detection.predict_light_switches(robot_state.image_state, vis_block=True)
-            logging.info(f"INITIAL LIGHT SWITCH DETECTION")
-            logging.info(f"Number of detected switches: {len(boxes)}")
+    #         #################################
+    #         # Detect the light switch bounding boxes and poses in the scene
+    #         #################################
+    #         boxes = light_switch_detection.predict_light_switches(robot_state.image_state, vis_block=True)
+    #         logging.info(f"INITIAL LIGHT SWITCH DETECTION")
+    #         logging.info(f"Number of detected switches: {len(boxes)}")
 
-            poses = calculate_light_switch_poses(boxes, robot_state.depth_image_state, robot_state.frame_name, frame_transformer)
-            logging.info(f"Number of calculated poses: {len(poses)}")
+    #         poses = calculate_light_switch_poses(boxes, robot_state.depth_image_state, robot_state.frame_name, frame_transformer)
+    #         logging.info(f"Number of calculated poses: {len(poses)}")
 
-            #################################
-            # Add the light switches to the scene graph (not fully implemented)
-            #################################
-            for pose in poses:
-                light_switch_node = LightSwitchNode(pose)
-                robot_state.scene_graph.add_node(light_switch_node)
+    #         #################################
+    #         # Add the light switches to the scene graph (not fully implemented)
+    #         #################################
+    #         for pose in poses:
+    #             light_switch_node = LightSwitchNode(pose)
+    #             robot_state.scene_graph.add_node(light_switch_node)
 
-            return poses
+    #         return poses
 
     @kernel_function(description="After having navigated to an object/furniture, you can call this function to inspect the object with gaze and save the image to your memory.")
     async def inspect_object_with_gaze(self, object_id: Annotated[int, "ID of the object in the scene graph"]) -> None:
+        
         # Check if object exists in scene graph
         if object_id not in robot_state.scene_graph.nodes:
             await communication.inform_user(f"Object with ID {object_id} not found in scene graph.")
             return None
-            
+
+        if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
+            logging.info(f"Inspected object with id {object_id} in simulation (without robot).")
+            return None
+
         centroid_pose = Pose3D(robot_state.scene_graph.nodes[object_id].centroid)
         response = await communication.ask_user(f"The robot would like to inspect object with id {object_id} and centroid {centroid_pose} with a gaze. Do you want to proceed? Please enter exactly 'yes' if you want to proceed.")   
         
         if response == "yes":
+
             # Create an instance we can reference after execution
             inspection_func = self._Inspect_Object_With_Gaze()
             
@@ -177,6 +183,7 @@ class InspectionPlugin:
                 object_centroid_pose=centroid_pose
             )
             logging.info(f"Completed inspecting of object with id {object_id} and centroid {centroid_pose} successfully (including saving to robot state).")
+        
         else:
             await communication.inform_user("I will not inspect the object.")
             

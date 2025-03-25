@@ -96,6 +96,10 @@ class NavigationPlugin:
         object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
         sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label)
         logging.info(f"Object with id {object_id} has label {sem_label}.")
+
+        if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
+            logging.info(f"Moving to object with id {object_id} and centroid {object_centroid_pose} in simulation (without robot).")
+            return None
         
         furniture_labels = self.general_config["semantic_labels"]["furniture"]
         if sem_label in furniture_labels:

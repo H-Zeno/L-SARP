@@ -70,8 +70,11 @@ async def main():
     logger.info("Loading robot planner configurations for scene: '%s'", active_scene.value)
 
     path_to_scene_data = Path(config["robot_planner_settings"]["path_to_scene_data"])
+    
     if not path_to_scene_data.exists():
-        raise FileNotFoundError(f"Scene data directory not found at {path_to_scene_data}")
+        logger.info("Scene data directory not found at %s", path_to_scene_data)
+        logger.info("Creating it now...")
+        path_to_scene_data.mkdir(parents=True, exist_ok=True)
 
     base_path = config.get_subpath("prescans")
     ending = config["pre_scanned_graphs"]["high_res"]
@@ -98,13 +101,29 @@ async def main():
     ############################################################
     # Start the connection to the robot
     ############################################################
-    initialize_robot_connection()
+    use_robot = config["robot_planner_settings"]["use_with_robot"]
+    
+    if use_robot:
+        initialize_robot_connection()
 
-    with bosdyn_client.lease.LeaseKeepAlive(
+    # Define a context manager helper class for when we're not using the robot
+    class DummyContextManager:
+        def __enter__(self):
+            return None
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+    
+    # Choose the appropriate context manager based on whether we're using the robot
+    context_manager = bosdyn_client.lease.LeaseKeepAlive(
         robot_lease_client, must_acquire=True, return_at_exit=True
-    ):
-        power_on()
-        spot_initial_localization()
+    ) if use_robot else DummyContextManager()
+    
+    # Use the context manager
+    with context_manager:
+        
+        if use_robot:
+            power_on()
+            spot_initial_localization()
 
         # Initialize the robot state with the scene graph
         robot_planner.set_instance(RobotPlanner(scene=active_scene))
@@ -208,20 +227,12 @@ async def main():
                             robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
                         )
                         
-                        # Create arguments for the task execution
-                        task_args = KernelArguments(
-                            task=task,
-                            plan=robot_planner.plan,
-                            tasks_completed=robot_planner.tasks_completed
-                        )
-                        
                         # Execute the task using thread-based approach for better context management
                         task_completion_response, execution_thread = await invoke_agent(
                             agent=robot_planner.task_execution_agent,
                             input_text_message=task_execution_prompt,
                             input_image_message=robot_state.get_current_image_content(),
                             thread=execution_thread,
-                            arguments=task_args,
                             debug=debug
                         )
                         
@@ -251,7 +262,8 @@ async def main():
                 f"Invalid task instruction mode: {config['robot_planner_settings']['task_instruction_mode']}"
             )
 
-        safe_power_off()
+        if use_robot:
+            safe_power_off()
 
 if __name__ == "__main__":
     asyncio.run(main())
