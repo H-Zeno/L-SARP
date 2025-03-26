@@ -48,12 +48,16 @@ from semantic_kernel.functions.kernel_function_decorator import kernel_function
 from robot_plugins.communication import CommunicationPlugin
 communication = CommunicationPlugin()
 
-
+general_config = Config()
 logger = logging.getLogger("plugins")
+# Set debug level based on config
+debug = general_config.get("robot_planner_settings", {}).get("debug", True)
+if debug:
+    logger.setLevel(logging.DEBUG)
+
 
 class InspectionPlugin:
     """This plugin contains functions to inspect certain objects in the scene."""
-    general_config = Config()
     global object_interaction_config
     object_interaction_config = Config("object_interaction_configs")
     
@@ -65,14 +69,14 @@ class InspectionPlugin:
 
         def __call__(
             self,
-            config: Config, 
+            config: Config,
             object_id: int,
             object_centroid_pose: Pose3D,
             *args,
             **kwargs,
         ) -> bool:  # Return success/failure flag instead of the actual images
             try:
-                logging.info("Starting object inspection with gaze")
+                logger.info("Starting object inspection with gaze")
                 
                 set_gripper_camera_params('1920x1080')
                 carry()
@@ -81,13 +85,13 @@ class InspectionPlugin:
                 # Get images
                 rgbd_response = get_camera_rgbd(
                     in_frame="image",
-                    vis_block=False, 
+                    vis_block=False,
                     cut_to_size=False,
                 )
                 
                 # Validate response
                 if not rgbd_response or len(rgbd_response) < 2:
-                    logging.error(f"Invalid RGBD response: got {len(rgbd_response) if rgbd_response else 0} items")
+                    logger.error(f"Invalid RGBD response: got {len(rgbd_response) if rgbd_response else 0} items")
                     return False
                 
                 # Unpack the response
@@ -96,7 +100,7 @@ class InspectionPlugin:
                 
                 # Validate tuples
                 if len(depth_tuple) != 2 or len(color_tuple) != 2:
-                    logging.error("Invalid response format from camera")
+                    logger.error("Invalid response format from camera")
                     return False
                     
                 depth_image, depth_response = depth_tuple
@@ -104,7 +108,7 @@ class InspectionPlugin:
                 
                 # Validate images
                 if depth_image is None or color_image is None:
-                    logging.error("Received None for depth or color image")
+                    logger.error("Received None for depth or color image")
                     return False
                 
                 stow_arm()
@@ -116,14 +120,14 @@ class InspectionPlugin:
                 robot_state.set_depth_image_state(depth_image)
 
                 if robot_state.image_state is None or robot_state.depth_image_state is None:
-                    logging.error("Failed to save images to robot state")
+                    logger.error("Failed to save images to robot state")
                     return False
                 
                 robot_state.save_image_state(f"inspection_object_{object_id}")
                 return True  # Return success flag
                 
             except Exception as e:
-                logging.error(f"Error in _Inspect_Object_With_Gaze: {str(e)}")
+                logger.error(f"Error in _Inspect_Object_With_Gaze: {str(e)}")
                 stow_arm()  # Always try to return to a safe position
                 return False
 
@@ -162,8 +166,8 @@ class InspectionPlugin:
             await communication.inform_user(f"Object with ID {object_id} not found in scene graph.")
             return None
 
-        if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
-            logging.info(f"Inspected object with id {object_id} in simulation (without robot).")
+        if general_config["robot_planner_settings"]["use_with_robot"] is not True:
+            logger.info(f"Inspected object with id {object_id} in simulation (without robot).")
             return None
 
         centroid_pose = Pose3D(robot_state.scene_graph.nodes[object_id].centroid)
@@ -175,14 +179,14 @@ class InspectionPlugin:
             inspection_func = self._Inspect_Object_With_Gaze()
             
             # Call function and get success/failure flag
-            logging.info("Calling take_control_with_function")
+            logger.info("Calling take_control_with_function")
             take_control_with_function(
                 function=inspection_func, 
-                config=self.general_config, 
+                config=general_config, 
                 object_id=object_id,
                 object_centroid_pose=centroid_pose
             )
-            logging.info(f"Completed inspecting of object with id {object_id} and centroid {centroid_pose} successfully (including saving to robot state).")
+            logger.info(f"Completed inspecting of object with id {object_id} and centroid {centroid_pose} successfully (including saving to robot state).")
         
         else:
             await communication.inform_user("I will not inspect the object.")

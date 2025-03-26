@@ -24,6 +24,9 @@ from utils.bounding_box_refinement import refine_bounding_box
 from utils.affordance_detection_light_switch import compute_advanced_affordance_VLM_GPT4, check_lamp_state
 from bosdyn.api.image_pb2 import ImageResponse
 
+# Set up logger
+logger = logging.getLogger("plugins")
+
 yolov8_weights_path = "/home/cvg-robotics/zeno_ws/L-SARP/weights/train30/weights/best.pt"
 
 class LightSwitchDetection:
@@ -152,9 +155,9 @@ class LightSwitchDetection:
             plt.show()
         
         affordance_dict = compute_advanced_affordance_VLM_GPT4(cropped_image, AFFORDANCE_DICT, API_KEY)
-        logging.info(f"Affordance detection finished. Returning affordance dict: {affordance_dict}")
+        logger.info(f"Affordance detection finished. Returning affordance dict: {affordance_dict}")
         end_time_affordance = time.time()
-        logging.info(f"Affordance happened in: {end_time_affordance - begin_time_affordance}")
+        logger.info(f"Affordance happened in: {end_time_affordance - begin_time_affordance}")
         
         return affordance_dict
 
@@ -254,7 +257,7 @@ class LightSwitchInteraction:
         count = 0
         while count < num_refinement_max_tries:
             if len(refined_poses) == 0:
-                logging.info(f"Refinement try {count+1} of {num_refinement_max_tries}")
+                logger.info(f"Refinement try {count+1} of {num_refinement_max_tries}")
                 for idx_ref_pose, ref_pose in enumerate(ref_add_poses):
                     p = pose.copy() @ ref_pose.copy()
                     # The arm will move to each of the 4, 3, 2, or 1 positions close to the light switch that we have set before (increased robustness)
@@ -264,22 +267,23 @@ class LightSwitchInteraction:
                         refined_pose, refined_box, color_response = self.get_refined_switch_pose(pose, frame_name, bounding_box_optimization) 
                         if refined_pose is not None:
                             refined_poses.append(refined_pose)
-                    except:
-                        logging.warning(f"Refinement try {count+1} failed at refinement pose {idx_ref_pose+1} of {len(ref_add_poses)}")
+                    except Exception as e:
+                        logger.warning(f"Error: {e}")
+                        logger.warning(f"Refinement try {count+1} failed at refinement pose {idx_ref_pose+1} of {len(ref_add_poses)}")
                         continue
             else:
-                logging.info(f"Refinement exited or finished at try {count} of {num_refinement_max_tries}")
+                logger.info(f"Refinement exited or finished at try {count} of {num_refinement_max_tries}")
                 break
             count += 1
             time.sleep(1)
 
         # our refined pose is the average of the refined poses that we calculated at different positions close to the light switch
-        logging.info(f"Number of refined poses: {len(refined_poses)}")
+        logger.info(f"Number of refined poses: {len(refined_poses)}")
         refined_pose = average_pose3Ds(refined_poses)
-        logging.info(f"Refinement finished for frame {frame_name}, average pose calculated")
+        logger.info(f"Refinement finished for frame {frame_name}, average pose calculated")
         
         end_time_refinement = time.time()
-        logging.info(f"Refinement time for frame {frame_name}: {end_time_refinement - begin_time_refinement}")
+        logger.info(f"Refinement time for frame {frame_name}: {end_time_refinement - begin_time_refinement}")
 
         return refined_pose, refined_box, color_response
 
@@ -358,7 +362,7 @@ class LightSwitchInteraction:
                     "interaction inference from symbols"] == "center push":
                     offsets.append([0.0, 0.0, 0.0])
                 else:
-                    logging.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
+                    logger.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
                     return None
             elif affordance_dict["button count"] == "double":
                 if affordance_dict["button position (wrt. other button!)"] == "buttons side-by-side":
@@ -368,14 +372,14 @@ class LightSwitchInteraction:
                         offsets.append([0.0, -gripper_width / 2, gripper_height / 2])
                         offsets.append([0.0, -gripper_width / 2, -gripper_height / 2])
                     elif affordance_dict["interaction inference from symbols"] == "left/right push":
-                        logging.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
+                        logger.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
                         return None
                     elif affordance_dict["interaction inference from symbols"] == "no symbols present" or affordance_dict[
                         "interaction inference from symbols"] == "center push":
                         offsets.append([0.0, gripper_width / 2, 0.0])
                         offsets.append([0.0, -gripper_width / 2, 0.0])
                     else:
-                        logging.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
+                        logger.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
                         return None
                 elif affordance_dict["button position (wrt. other button!)"] == "buttons stacked vertically":
                     if affordance_dict["interaction inference from symbols"] == "no symbols present" or affordance_dict[
@@ -383,13 +387,13 @@ class LightSwitchInteraction:
                         offsets.append([0.0, 0.0, gripper_height / 2])
                         offsets.append([0.0, 0.0, -gripper_height / 2])
                     else:
-                        logging.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
+                        logger.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
                         return None
                 elif affordance_dict["button position (wrt. other button!)"] == "none":
-                    logging.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
+                    logger.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
                     return None
                 else:
-                    logging.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
+                    logger.warning(f"AFFORDANCE ERROR: {affordance_dict} NOT EXPECTED")
                     return None
             return offsets, affordance_dict["button type"]
         else:

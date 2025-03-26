@@ -10,14 +10,14 @@ import re
 import emoji
 import logging
 from semantic_kernel.functions.kernel_arguments import KernelArguments
+from utils.recursive_config import Config
 
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+config = Config()
+logger = logging.getLogger("plugins")
+# Set debug level based on config
+debug = config.get("robot_planner_settings", {}).get("debug", True)
+if debug:
+    logger.setLevel(logging.DEBUG)
 
 class CommunicationPlugin:
     """A plugin that can be used to communicate with the user"""

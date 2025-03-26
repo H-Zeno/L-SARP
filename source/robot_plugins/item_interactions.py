@@ -88,7 +88,7 @@ class ItemInteractionsPlugin:
             #################################
             set_gripper_camera_params('1920x1080')
             time.sleep(1)
-            logging.info("The robot now will gaze at the light switch with the pose {light_switch_pose}.")
+            logger.info("The robot now will gaze at the light switch with the pose {light_switch_pose}.")
             
             gaze(Pose3D(light_switch_node.centroid), robot_state.frame_name, gripper_open=True)
 
@@ -103,14 +103,14 @@ class ItemInteractionsPlugin:
             # Detect the light switch bounding boxes and poses in the scene
             #################################
             boxes = light_switch_detection.predict_light_switches(color_response[0], vis_block=True)
-            logging.info(f"INITIAL LIGHT SWITCH DETECTION")
-            logging.info(f"Number of detected switches: {len(boxes)}")
+            logger.info(f"INITIAL LIGHT SWITCH DETECTION")
+            logger.info(f"Number of detected switches: {len(boxes)}")
             end_time_detection = time.time()
 
             poses = calculate_light_switch_poses(boxes, depth_image_response, robot_state.frame_name, frame_transformer)
-            logging.info(f"Number of calculated poses: {len(poses)}")
+            logger.info(f"Number of calculated poses: {len(poses)}")
             end_time_pose_calculation = time.time()
-            logging.info(f"Pose calculation time: {end_time_pose_calculation - end_time_detection}")
+            logger.info(f"Pose calculation time: {end_time_pose_calculation - end_time_detection}")
             light_switch_pose = poses[0]
             
             #################################
@@ -128,7 +128,7 @@ class ItemInteractionsPlugin:
             #################################
             # affordance detection
             #################################
-            logging.info("affordance detection starting...")
+            logger.info("affordance detection starting...")
             affordance_dict = light_switch_detection.light_switch_affordance_detection(
                 refined_box, color_response, 
                 config["AFFORDANCE_DICT_LIGHT_SWITCHES"], self.planner_settings.get("OPENAI_API_KEY")
@@ -144,7 +144,7 @@ class ItemInteractionsPlugin:
                 switch_type, refined_pose, offsets, robot_state.frame_name, config["FORCES"]
             )
             stow_arm()
-            logging.info(f"Tried interaction with switch")
+            logger.info(f"Tried interaction with switch")
             
             # #################################
             # # check lamp states post interaction
@@ -171,9 +171,9 @@ class ItemInteractionsPlugin:
             # lamp_images_pre = lamp_images_post.copy()
 
             # Logging
-            logging.info(f"Interaction with switch finished")
+            logger.info(f"Interaction with switch finished")
             switch_interaction_end_time = time.time()
-            logging.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
+            logger.info(f"Switch interaction time: {switch_interaction_end_time - switch_interaction_start_time}")
 
             stow_arm()
 
@@ -183,7 +183,7 @@ class ItemInteractionsPlugin:
                                 object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
         
         if config["robot_planner_settings"]["use_with_robot"] is not True:
-            logging.info("Pushed light switch in simulation (without robot).")
+            logger.info("Pushed light switch in simulation (without robot).")
             return None
 
         # Get object information from the scene graph
@@ -191,7 +191,7 @@ class ItemInteractionsPlugin:
         light_switch_centroid = light_switch_node.centroid
         sem_label = robot_state.scene_graph.label_mapping.get(light_switch_node.sem_label, "light switch")
         
-        logging.info(f"Light switch with ID {light_switch_object_id} has label {sem_label} and is at position {light_switch_centroid}")
+        logger.info(f"Light switch with ID {light_switch_object_id} has label {sem_label} and is at position {light_switch_centroid}")
         
         # Use the furniture labels from config when needed
         light_switch_interaction_pose = get_best_pose_in_front_of_object(
@@ -214,7 +214,7 @@ class ItemInteractionsPlugin:
             )
 
             body_to_object_end_time = time.time()
-            logging.info(f"Moved spot succesfully to the light switch interaction pose. Time to move body to object: {body_to_object_end_time - body_to_object_start_time}")
+            logger.info(f"Moved spot succesfully to the light switch interaction pose. Time to move body to object: {body_to_object_end_time - body_to_object_start_time}")
 
         else:
             await communication.inform_user("The robot will not move to the light switch interaction position and will not continue the light switch interaction.")
@@ -229,7 +229,7 @@ class ItemInteractionsPlugin:
                 function=self._Push_Light_Switch(), 
                 light_switch_object_id=light_switch_object_id
             )
-            logging.info(f"Light switch with ID {light_switch_object_id} pushed successfully")
+            logger.info(f"Light switch with ID {light_switch_object_id} pushed successfully")
             await communication.inform_user("Light switch interaction completed.")
 
         else:

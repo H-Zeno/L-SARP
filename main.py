@@ -59,9 +59,9 @@ _, logger_main = setup_logging(
 logger = logger_main
 
 # Set debug level based on config
-debug = config.get("logging_settings", {}).get("debug", True)
+debug = config.get("robot_planner_settings", {}).get("debug", True)
 if debug:
-    logging.getLogger().setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
 
 async def main():
     """Main entry point for the robot control system.
@@ -92,7 +92,7 @@ async def main():
     # Loading/computing the scene graph
     scene_graph_path = Path(path_to_scene_data / active_scene_name / "full_scene_graph.pkl")
     scene_graph_json_path = Path(path_to_scene_data / active_scene_name / "scene_graph.json")
-    logging.info("Loading scene graph from %s. This may take a few seconds...", scan_dir)
+    logger.info("Loading scene graph from %s. This may take a few seconds...", scan_dir)
     scene_graph = get_scene_graph(
         scan_dir,
         graph_save_path=scene_graph_path,
@@ -242,8 +242,7 @@ async def main():
                             agent=robot_planner.task_execution_agent,
                             thread=execution_thread,
                             input_text_message=task_execution_prompt,
-                            input_image_message=robot_state.get_current_image_content(),
-                            debug=debug
+                            input_image_message=robot_state.get_current_image_content()
                         )
                         
                         logger.info("Task completion response: %s", task_completion_response)

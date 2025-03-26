@@ -60,6 +60,7 @@ frame_transformer = FrameTransformerSingleton()
 config = Config()
 dotenv_values(".env_core_planner")
 use_robot = config.get("robot_planner_settings", {}).get("use_with_robot", False)
+debug = config.get("robot_planner_settings", {}).get("debug", True)
 
 # Just get the logger, configuration is handled in main.py
 logger = logging.getLogger("main")
@@ -351,13 +352,12 @@ class RobotPlanner:
             agent=self.task_planner_agent, 
             thread=self.json_format_agent_thread,
             input_text_message=additional_message + plan_generation_prompt, 
-            input_image_message=robot_state.get_current_image_content(),
-            
+            input_image_message=robot_state.get_current_image_content()
         )
         
-        logger.info("========================================")
-        logger.info(f"Initial plan full response: {str(plan_response)}")
-        logger.info("========================================")
+        logger.debug("========================================")
+        logger.debug(f"Initial plan full response: {str(plan_response)}")
+        logger.debug("========================================")
 
         # Convert ChatMessageContent to string
         plan_response_str = str(plan_response)
@@ -379,9 +379,9 @@ class RobotPlanner:
             plan_json_str = str(plan_response_str).replace('```json', '').replace('```', '').strip()
 
         try:
-            logger.info("========================================")
-            logger.info(f"Plan JSON string: {plan_json_str}")   
-            logger.info("========================================")
+            logger.debug("========================================")
+            logger.debug(f"Plan JSON string: {plan_json_str}")   
+            logger.debug("========================================")
             self.plan = json.loads(plan_json_str)
             
         except json.JSONDecodeError as e:

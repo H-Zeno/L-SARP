@@ -51,6 +51,9 @@ world_object_client = WorldObjectClientSingleton()
 # Import the scene graph class
 from LostFound.src.scene_graph import SceneGraph
 
+# Set up logger
+logger = logging.getLogger("main")
+
 @dataclass
 class RobotState:
     """
@@ -66,14 +69,15 @@ class RobotState:
     It provides methods to update this state and format it for use by the agentic framework.
     """
     config = Config()
-    
+    use_robot = config["robot_planner_settings"]["use_with_robot"]
     # objects_in_view: List[int] = field(default_factory=list)
     
     
     def __init__(self, scene_graph_object: Optional[SceneGraph] = None, scene_graph_str: Optional[str] = None):
 
         # Image state
-        self._get_available_cameras()
+        if self.use_robot:
+            self._get_available_cameras()
         self.default_image_source = "frontleft_fisheye_image"
         self.hand_image_sources = ['hand_color_image', 'hand_color_in_hand_depth_frame', 'hand_depth', 'hand_depth_in_hand_color_frame', 'hand_image']
 
@@ -129,7 +133,7 @@ class RobotState:
         """Converts the image_state to an ImageContent instance."""
 
         if self.image_state is None or len(self.image_state.shape) == 0:
-            print("No image state available.")
+            logger.warning("No image state available.")
             return None
         
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
@@ -148,15 +152,15 @@ class RobotState:
     def _get_available_cameras(self) -> None:
         """Get a list of available cameras on the robot."""
         if not robot or not image_client:
-            print("Robot not connected. Cannot get available cameras.")
+            logger.error("Robot not connected. Cannot get available cameras.")
             return
         
         try:
             sources = image_client.list_image_sources()
             self.available_cameras = [source.name for source in sources]
-            print(f"Available cameras: {self.available_cameras}")
+            logger.info(f"Available cameras: {self.available_cameras}")
         except Exception as e:
-            print(f"Error getting available cameras: {e}")
+            logger.error(f"Error getting available cameras: {e}")
             self.available_cameras = []
 
 

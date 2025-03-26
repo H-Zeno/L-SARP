@@ -88,17 +88,17 @@ class NavigationPlugin:
             )
 
             body_to_object_end_time = time.time()
-            logging.info(f"Moved spot succesfully to the object. Time to move body to object: {body_to_object_end_time - body_to_object_start_time}")
+            logger.info(f"Moved spot succesfully to the object. Time to move body to object: {body_to_object_end_time - body_to_object_start_time}")
 
     @kernel_function(description="function to call when the robot needs to navigate from place A (coordinates) to place B (coordinates)", name="RobotNavigation")
     async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
 
         object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
         sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label)
-        logging.info(f"Object with id {object_id} has label {sem_label}.")
+        logger.info(f"Object with id {object_id} has label {sem_label}.")
 
         if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
-            logging.info(f"Moving to object with id {object_id} and centroid {object_centroid_pose} in simulation (without robot).")
+            logger.info(f"Moving to object with id {object_id} and centroid {object_centroid_pose} in simulation (without robot).")
             return None
         
         furniture_labels = self.general_config["semantic_labels"]["furniture"]
@@ -114,7 +114,7 @@ class NavigationPlugin:
         response = await communication.ask_user("Do you want me to move to the object? Please enter exactly 'yes' if you want me to move to the object.")
         if response == "yes":
             take_control_with_function(config=self.general_config, function=self._Move_To_Object(), object_interaction_pose=object_interaction_pose, body_assist=True)
-            logging.info(f"Robot moved to the object with id {object_id}")
+            logger.info(f"Robot moved to the object with id {object_id}")
         else:
             await communication.inform_user("I will not move to the object.")
 

@@ -10,21 +10,29 @@ from semantic_kernel.contents.function_call_content import FunctionCallContent
 from semantic_kernel.contents.function_result_content import FunctionResultContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.functions.kernel_arguments import KernelArguments
+from utils.recursive_config import Config
 
-logger = logging.getLogger(__name__)
+config = Config()
+logger = logging.getLogger("main")
 
-def _write_content(content: ChatMessageContent, debug: bool = False) -> None:
+def _write_content(content: ChatMessageContent) -> None:
     """Write the content to the console."""
-    last_item_type = type(content.items[-1]).__name__ if content.items else "(empty)"
+    if not content.items:
+        logger.debug("#DEBUG (write content): [(empty)] %s : '(no content)'", content.role)
+        return
+        
+    last_item = content.items[-1]
+    last_item_type = type(last_item).__name__
+    
     message_content = ""
-    if isinstance(last_item_type, FunctionCallContent):
-        message_content = f"tool request = {content.items[-1].function_name}"
-    elif isinstance(last_item_type, FunctionResultContent):
-        message_content = f"function result = {content.items[-1].result}"
+    if isinstance(last_item, FunctionCallContent):
+        message_content = f"tool request = {last_item.function_name}"
+    elif isinstance(last_item, FunctionResultContent):
+        message_content = f"function result = {last_item.result}"
     else:
-        message_content = str(content.items[-1])
-    if debug:
-        logger.debug("[%s] %s : '%s'", last_item_type, content.role, message_content)
+        message_content = str(last_item)
+
+    logger.info("#Content: [%s] %s : '%s'", last_item_type, content.role, message_content)
 
 
 async def invoke_agent(
@@ -33,7 +41,6 @@ async def invoke_agent(
     input_text_message: str,
     input_image_message: ImageContent = None,
     save_to_history: bool = True,
-    debug: bool = False,
     arguments: KernelArguments = None
     ) -> Tuple[str, ChatHistoryAgentThread]:
     """
@@ -51,8 +58,8 @@ async def invoke_agent(
     Returns:
         tuple: (response content, updated thread)
     """
-    if debug:
-        logger.debug(f"#AGENT INVOKED ({agent.name}) : '{input_text_message}'")
+    logger.info("Agent %s Invoked.", agent.name)
+    logger.debug("Exact message sent to agent: %s", input_text_message)
     
     # Create message with text and optional image
     message = None
@@ -63,16 +70,33 @@ async def invoke_agent(
             message = input_text_message
     
     # Save original messages if we shouldn't save to history
-    orig_chat_history = None
-    if not save_to_history:
-        # Create a copy of messages
+    if thread is not None:
         orig_chat_history = await thread.get_messages()
+    else:
+        orig_chat_history = None
     
     response = await agent.get_response(messages=message, thread=thread, arguments=arguments)
+    logger.debug("Raw response from agent: %s", response)
+    
+    # Log all content items, including function calls
+    chat_history = await response.thread.get_messages()
+    
+    # Get the messages that were added during this invocation (the new ones)
+    start_idx = len(orig_chat_history) if orig_chat_history is not None else 0
+    for msg in chat_history.messages[start_idx:]:
+        # Log the role of each message to better understand the conversation flow
+        logger.debug("Processing message with role: %s", msg.role)
+        
+        # Process all messages regardless of role
+        for item in msg.items:
+            if isinstance(item, FunctionCallContent):
+                logger.info("#Function Call: %s(%s)", item.function_name, item.arguments)
+
+    # Log the final response content
     _write_content(response.content)
     
     # If we shouldn't save to history, create a new thread with the original messages
-    if not save_to_history and orig_chat_history is not None:
+    if not save_to_history:
         # Create a new thread with the original messages
         new_thread = ChatHistoryAgentThread(chat_history=orig_chat_history, thread_id=thread._thread_id)
         await new_thread.create()
@@ -105,7 +129,7 @@ async def invoke_agent_group_chat(
     """
     
     if debug:
-        logger.debug(f"# {AuthorRole.USER}: '{input_text_message}'")
+        logger.debug("# %s: '%s'", AuthorRole.USER, input_text_message)
     
     init_history = None
     if save_to_history is False:
@@ -130,10 +154,9 @@ async def invoke_agent_group_chat(
     async for content in group_chat.invoke(agent=agent):
         response += content.content
         if debug:
-            logger.debug(f"### DEBUG: Group chat content added to response: {content.content}")
+            logger.debug("### DEBUG: Group chat content added to response: %s", content.content)
 
-    if debug:
-        logger.debug(f"### DEBUG: Group chat response: {response}")
+    logger.debug("### DEBUG: Group chat response: %s", response)
     
     # Add the response to history
     await group_chat.add_chat_message(

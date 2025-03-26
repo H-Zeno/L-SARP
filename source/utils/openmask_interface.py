@@ -15,6 +15,9 @@ from utils import recursive_config
 from utils.docker_communication import _get_content
 from utils.recursive_config import Config
 
+# Set up logger
+logger = logging.getLogger("main")
+
 MODEL, PREPROCESS = clip.load("ViT-L/14@336px", device="cpu")
 
 
@@ -102,7 +105,7 @@ def get_mask_points(item: str, config, idx: int = 0, vis_block: bool = False):
         masks = np.load(mask_path)
 
     except FileNotFoundError:
-        logging.info("Mask clip features not found. Running OpenMask now.")
+        logger.info("Mask clip features not found. Running OpenMask now.")
         get_mask_clip_features()
         features = np.load(feat_path)
         masks = np.load(mask_path)

@@ -17,6 +17,8 @@ from utils.importer import PointCloud
 from utils.scannet_200_labels import CLASS_LABELS_200, VALID_CLASS_IDS_200
 from utils.vis import generate_distinct_colors
 
+# Set up logger
+logger = logging.getLogger("main")
 
 def is_valid_label(item: str) -> bool:
     """
@@ -43,11 +45,11 @@ def _get_list_of_items(folder_path: str) -> pd.DataFrame:
             os.path.join(folder_path, "predictions_light_switches.txt"),
             os.path.join(folder_path, "predictions_drawers.txt")
         ]
-        logging.info(f"Looking for prediction files in directory: {folder_path}")
+        logger.info(f"Looking for prediction files in directory: {folder_path}")
     else:
         # If it's already a file, use it directly
         prediction_files = [folder_path]
-        logging.info(f"Using prediction file: {folder_path}")
+        logger.info(f"Using prediction file: {folder_path}")
     
     # Initialize empty DataFrame to store combined results
     combined_df = pd.DataFrame(columns=["path_ending", "class_label", "confidence"])
@@ -55,7 +57,7 @@ def _get_list_of_items(folder_path: str) -> pd.DataFrame:
     # Process each prediction file
     for pred_file in prediction_files:
         if not os.path.exists(pred_file):
-            logging.debug(f"Prediction file not found at {pred_file}")
+            logger.debug(f"Prediction file not found at {pred_file}")
             continue
         
         try:
@@ -67,7 +69,7 @@ def _get_list_of_items(folder_path: str) -> pd.DataFrame:
             clean_lines = [line.strip() for line in lines if line.strip()]
             
             if not clean_lines:
-                logging.debug(f"Prediction file {pred_file} is empty")
+                logger.debug(f"Prediction file {pred_file} is empty")
                 continue
             
             # Create a DataFrame from the cleaned lines
@@ -78,7 +80,7 @@ def _get_list_of_items(folder_path: str) -> pd.DataFrame:
                     data.append(parts[:3])  # Take only first 3 columns if there are more
             
             if not data:
-                logging.debug(f"No valid data found in {pred_file}")
+                logger.debug(f"No valid data found in {pred_file}")
                 continue
             
             # Create DataFrame for this file
@@ -91,19 +93,19 @@ def _get_list_of_items(folder_path: str) -> pd.DataFrame:
             # Append to combined DataFrame
             combined_df = pd.concat([combined_df, file_df], ignore_index=True)
             
-            logging.info(f"Successfully processed {pred_file} with {len(file_df)} entries")
+            logger.info(f"Successfully processed {pred_file} with {len(file_df)} entries")
             
         except Exception as e:
-            logging.error(f"Error reading prediction file {pred_file}: {str(e)}")
+            logger.error(f"Error reading prediction file {pred_file}: {str(e)}")
             continue
     
     if combined_df.empty:
-        logging.warning("No data was successfully loaded from any prediction files")
+        logger.warning("No data was successfully loaded from any prediction files")
     else:
         # Log the first few rows to help with debugging
-        logging.info(f"Combined {len(combined_df)} total entries from all prediction files")
-        logging.debug(f"First few rows of combined DataFrame:\n{combined_df.head()}")
-        logging.debug(f"Available class labels: {combined_df['class_label'].unique()}")
+        logger.info(f"Combined {len(combined_df)} total entries from all prediction files")
+        logger.debug(f"First few rows of combined DataFrame:\n{combined_df.head()}")
+        logger.debug(f"Available class labels: {combined_df['class_label'].unique()}")
     
     return combined_df
 
