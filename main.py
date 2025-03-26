@@ -42,12 +42,13 @@ frame_transformer = FrameTransformerSingleton()
 # Set up the configuration
 config = Config()
 
-# Set up logging with OpenTelemetry integration if configured
-enable_opentelemetry = config.get("logging_settings", {}).get("enable_opentelemetry", False)
-service_name = config.get("logging_settings", {}).get("service_name", "L-SARP")
 
 env_variables = dotenv_values(".env_core_planner")
 connection_string = env_variables.get("AZURE_APP_INSIGHTS_CONNECTION_STRING")
+
+# Set up logging with OpenTelemetry integration if configured
+enable_opentelemetry = config.get("logging_settings", {}).get("enable_opentelemetry", False)
+service_name = config.get("logging_settings", {}).get("service_name", "L-SARP")
 
 # Set up logging
 _, logger_main = setup_logging(
@@ -224,7 +225,8 @@ async def main():
                     for task in robot_planner.plan["tasks"]:
                         robot_planner.task = task
                         logger.info("%s\nExecuting task: %s\n%s", separator, task, separator)
-                        logger.info("Current robot frame: %s", robot_state.frame_name)
+                        if use_robot:
+                            logger.info("Current robot frame: %s", robot_state.frame_name)
 
                         # Format the task execution prompt
                         task_execution_prompt = task_completion_prompt_template.format(
@@ -232,15 +234,15 @@ async def main():
                             plan=robot_planner.plan,
                             tasks_completed=robot_planner.tasks_completed,
                             scene_graph=str(scene_graph.scene_graph_to_dict()),
-                            robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+                            robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
                         )
                         
                         # Execute the task using thread-based approach for better context management
                         task_completion_response, execution_thread = await invoke_agent(
                             agent=robot_planner.task_execution_agent,
+                            thread=execution_thread,
                             input_text_message=task_execution_prompt,
                             input_image_message=robot_state.get_current_image_content(),
-                            thread=execution_thread,
                             debug=debug
                         )
                         

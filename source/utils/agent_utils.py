@@ -29,32 +29,30 @@ def _write_content(content: ChatMessageContent, debug: bool = False) -> None:
 
 async def invoke_agent(
     agent: ChatCompletionAgent,
+    thread: ChatHistoryAgentThread,
     input_text_message: str,
     input_image_message: ImageContent = None,
-    thread: ChatHistoryAgentThread = None,
-    chat_history: ChatHistory = None,
     save_to_history: bool = True,
     debug: bool = False,
     arguments: KernelArguments = None
-    ) -> Tuple[str, Union[ChatHistory, ChatHistoryAgentThread]]:
+    ) -> Tuple[str, ChatHistoryAgentThread]:
     """
     Invoke the agent with the user input.
     
     Args:
         agent (ChatCompletionAgent): The agent to invoke
-        chat_history (ChatHistory, optional): Chat history to use if not using thread
         input_text_message (str): Text message to send to the agent
         input_image_message (ImageContent, optional): Image content to send with the message
+        thread (ChatHistoryAgentThread, optional): Chat thread to use
         save_to_history (bool): Whether to save the conversation to history
         debug (bool): Whether to print debug messages
-        thread (ChatHistoryAgentThread, optional): Chat thread to use (preferred over chat_history)
         arguments (KernelArguments, optional): Additional arguments to pass to the agent
         
     Returns:
-        tuple: (response content, updated chat history or thread)
+        tuple: (response content, updated thread)
     """
     if debug:
-        logger.debug(f"# {AuthorRole.USER}: '{input_text_message}'")
+        logger.debug(f"#AGENT INVOKED ({agent.name}) : '{input_text_message}'")
     
     # Create message with text and optional image
     message = None
@@ -64,53 +62,23 @@ async def invoke_agent(
         else:
             message = input_text_message
     
-    # Using thread (preferred) or chat_history
-    if thread is not None:
-        # Use the thread-based API
-        if not save_to_history:
-            # Create a copy of messages for temporary use
-            orig_messages = await thread.get_messages()
+    # Save original messages if we shouldn't save to history
+    orig_chat_history = None
+    if not save_to_history:
+        # Create a copy of messages
+        orig_chat_history = await thread.get_messages()
+    
+    response = await agent.get_response(messages=message, thread=thread, arguments=arguments)
+    _write_content(response.content)
+    
+    # If we shouldn't save to history, create a new thread with the original messages
+    if not save_to_history and orig_chat_history is not None:
+        # Create a new thread with the original messages
+        new_thread = ChatHistoryAgentThread(chat_history=orig_chat_history, thread_id=thread._thread_id)
+        await new_thread.create()
+        thread = new_thread
         
-        response = await agent.get_response(messages=message, thread=thread, arguments=arguments)
-        _write_content(response)
-        
-        if not save_to_history:
-            # Restore original messages
-            thread = await thread.create_new(orig_messages.messages)
-            
-        return response.content, response.thread
-        
-    else:
-        # Using chat_history (legacy approach)
-        if chat_history is None:
-            chat_history = ChatHistory()
-            
-        if not save_to_history:
-            init_history = ChatHistory()
-            for msg in chat_history.messages:
-                init_history.add_message(msg)
-                
-        # Add user message to history
-        if input_image_message is not None:
-            chat_history.add_message(
-                ChatMessageContent(role=AuthorRole.USER, items=[TextContent(text=input_text_message), input_image_message])
-            )
-        else:
-            chat_history.add_message(
-                ChatMessageContent(role=AuthorRole.USER, content=input_text_message)
-            )
-
-        response_content = None
-        # Invoke the agent and capture the last response
-        async for content in agent.invoke(chat_history, arguments=arguments):
-            chat_history.add_message(content)
-            _write_content(content, debug)
-            response_content = content.content
-
-        if not save_to_history:
-            chat_history = init_history
-
-        return response_content, chat_history
+    return response.content, response.thread
 
 
 async def invoke_agent_group_chat(
