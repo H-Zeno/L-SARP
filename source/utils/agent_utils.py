@@ -65,9 +65,11 @@ async def invoke_agent(
     message = None
     if input_text_message is not None:
         if input_image_message is not None:
-            message = [TextContent(text=input_text_message), input_image_message]
+            # Create a proper ChatMessageContent with role for text+image
+            message = ChatMessageContent(role=AuthorRole.USER, items=[TextContent(text=input_text_message), input_image_message])
         else:
-            message = input_text_message
+            # Create a proper ChatMessageContent with role for text-only
+            message = ChatMessageContent(role=AuthorRole.USER, content=input_text_message)
     
     # Save original messages if we shouldn't save to history
     if thread is not None:

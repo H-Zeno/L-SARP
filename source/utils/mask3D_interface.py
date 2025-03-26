@@ -124,6 +124,7 @@ def get_coordinates_from_item(
     :param point_cloud_path: path for the point cloud
     :param index: if there are multiple objects for a given label, which one to focus on
     """
+    logger.info(f"Getting coordinates from item: {item}")
     if not is_valid_label(item):
         raise ValueError(f"Item {item} is not a valid label")
     # convert string label to numeric
@@ -145,12 +146,39 @@ def get_coordinates_from_item(
         lines = file.readlines()
     good_points_bool = np.asarray([bool(int(line)) for line in lines])
 
-    # read the point cloud, select by indices specified in the file
+    # read the point cloud
     pc = o3d.io.read_point_cloud(point_cloud_path)
-
+    
+    # IMPORTANT: Mask3D uses voxel quantization on the point cloud before generating masks 
+    # We need to replicate that process here to ensure mask indices match point cloud indices
+    points = np.asarray(pc.points)
+    
+    # Apply the same voxel size (0.02) that Mask3D uses for quantization
+    voxel_size = 0.02
+    logger.info(f"Original point cloud has {len(points)} points")
+    
+    # This creates a quantized version of the point cloud using the same method as Mask3D
+    pc_quantized = pc.voxel_down_sample(voxel_size)
+    logger.info(f"Quantized point cloud has {len(pc_quantized.points)} points")
+    
+    # Check if the sizes match
+    if len(pc_quantized.points) != len(good_points_bool):
+        logger.warning(f"Size mismatch! Mask has {len(good_points_bool)} entries but quantized point cloud has {len(pc_quantized.points)} points")
+        # If sizes are close, we can try to use only the valid indices
+        if len(good_points_bool) > len(pc_quantized.points):
+            logger.warning("Truncating mask to match point cloud size")
+            good_points_bool = good_points_bool[:len(pc_quantized.points)]
+        else:
+            logger.warning("Padding mask with False values to match point cloud size")
+            padding = np.zeros(len(pc_quantized.points) - len(good_points_bool), dtype=bool)
+            good_points_bool = np.concatenate([good_points_bool, padding])
+    
+    # Get indices of mask points
     good_points_idx = np.where(good_points_bool)[0]
-    environment_cloud = pc.select_by_index(good_points_idx, invert=True)
-    item_cloud = pc.select_by_index(good_points_idx)
+    
+    # Use the quantized point cloud instead of the original
+    environment_cloud = pc_quantized.select_by_index(good_points_idx, invert=True)
+    item_cloud = pc_quantized.select_by_index(good_points_idx)
 
     return item_cloud, environment_cloud
 

@@ -12,12 +12,12 @@ path_to_data: 'data/'
 
 
 robot_planner_settings:
-  use_with_robot: false
+  use_with_robot: true
   active_scene: 'SEMANTIC_CORNER_WITH_BED' # needs to be in all caps, see misc/scenes_and_plugins_config.py
   task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"
   path_to_scene_data: 'data_scene/' # relative path to project_root_dir
   debug: true
-# We give the robot task, and then the robot needs to great a goal, subtasks, and plan its actions to achieve the goal
+
 
 robot_parameters:
   verbose: False

@@ -200,12 +200,14 @@ def get_rgb_pictures(
     image_sources: Iterable[str],
     auto_rotate: bool = True,
     vis_block: bool = False,
+    gripper_open: bool = True,
 ) -> list[(np.ndarray, image_pb2.ImageResponse)]:
     """
     Get rgb pictures of specified image sources.
     :param image_sources: iterable (list) of sensors from which readings should be taken
     :param auto_rotate: whether to auto rotate the image
     :param vis_block: whether to show the captured images before returning
+    :param gripper_open: whether to open the gripper before taking pictures
     :return: list of (image as np array, bosdyn ImageResponse), where the first is the image as a numpy array, and the
     second is the ImageResponse object for every capture
     """
@@ -213,6 +215,7 @@ def get_rgb_pictures(
         "image_sources": image_sources,
         "auto_rotate": auto_rotate,
         "vis_block": vis_block,
+        "gripper_open": gripper_open,
     }
     pixel_format = image_pb2.Image.PixelFormat.PIXEL_FORMAT_RGB_U8
     images = get_pictures_from_sources(pixel_format=pixel_format, **kwargs)

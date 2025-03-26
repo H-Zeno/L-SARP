@@ -80,6 +80,7 @@ ALL_SINGLETONS = (
 )
 
 config = Config()
+logger = logging.getLogger("robot_logger")
 
 class ControlFunction(Protocol):
     """
@@ -202,11 +203,11 @@ def spot_initial_localization() -> None:
     set_gripper_camera_params('640x480')
 
     robot_state.frame_name = localize_from_images(config, vis_block=False) # localize from images instantiates the image client
-    print("====================================")
-    print(f"Frame name: {robot_state.frame_name}")
-    print("====================================")
+    logger.info("====================================")
+    logger.info(f"Frame name: {robot_state.frame_name}")
+    logger.info("====================================")
     end_time_localization = time.time()
-    logging.info(f"Spot localization succesfull. Localization time: {end_time_localization - start_time}")
+    logger.info(f"Spot localization succesfull. Localization time: {end_time_localization - start_time}")
 
 
 def power_on(): 

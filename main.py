@@ -51,12 +51,12 @@ enable_opentelemetry = config.get("logging_settings", {}).get("enable_openteleme
 service_name = config.get("logging_settings", {}).get("service_name", "L-SARP")
 
 # Set up logging
-_, logger_main = setup_logging(
+setup_logging(
     enable_opentelemetry=enable_opentelemetry,
     service_name=service_name,
-    connection_string=connection_string
+    connection_string=connection_string,
 )
-logger = logger_main
+logger = logging.getLogger("main")
 
 # Set debug level based on config
 debug = config.get("robot_planner_settings", {}).get("debug", True)

@@ -9,6 +9,7 @@ import os
 import copy
 import numpy as np
 from typing import List, Optional, Annotated
+import asyncio
 
 # =============================================================================
 # Bosdyn and Robot Utilities
@@ -65,6 +66,8 @@ class NavigationPlugin:
             **kwargs,
         ) -> None:
             
+            logger.info(f"Starting _Move_To_Object with target pose: {object_interaction_pose}")
+            logger.info(f"Current robot position: {frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)}")
             body_to_object_start_time = time.time()
 
             #################################
@@ -82,43 +85,110 @@ class NavigationPlugin:
             #################################
             # Move spot to the required pose
             #################################
-            move_body(
-                pose=object_interaction_pose,
-                frame_name=robot_state.frame_name,
-            )
+            try:
+                logger.info(f"Moving robot to pose {object_interaction_pose} in frame {robot_state.frame_name}")
+                success = move_body(
+                    pose=object_interaction_pose,
+                    frame_name=robot_state.frame_name,
+                )
+                if success:
+                    logger.info("move_body function returned success")
+                else:
+                    logger.error("move_body function returned failure")
+            except Exception as e:
+                logger.error(f"Exception during move_body: {e}")
+                logger.exception("Traceback:")
 
             body_to_object_end_time = time.time()
-            logger.info(f"Moved spot succesfully to the object. Time to move body to object: {body_to_object_end_time - body_to_object_start_time}")
+            logger.info(f"Moved spot to the object. Time to move: {body_to_object_end_time - body_to_object_start_time:.2f} seconds")
+            logger.info(f"New robot position: {frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)}")
 
     @kernel_function(description="function to call when the robot needs to navigate from place A (coordinates) to place B (coordinates)", name="RobotNavigation")
     async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
+        try:
+            # Safety check: verify the object exists in the scene graph
+            if object_id not in robot_state.scene_graph.nodes:
+                error_msg = f"Object with ID {object_id} not found in scene graph."
+                logger.error(error_msg)
+                await communication.inform_user(error_msg)
+                return None
 
-        object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
-        sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label)
-        logger.info(f"Object with id {object_id} has label {sem_label}.")
+            object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
+            sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label, "Unknown object")
+            logger.info(f"Object with id {object_id} has label {sem_label}.")
 
-        if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
-            logger.info(f"Moving to object with id {object_id} and centroid {object_centroid_pose} in simulation (without robot).")
+            if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
+                logger.info(f"Moving to object with id {object_id} and centroid {object_centroid_pose} in simulation (without robot).")
+                return None
+            
+            # Determine appropriate interaction pose based on object type
+            furniture_labels = self.general_config["semantic_labels"]["furniture"]
+            object_interaction_pose = None
+            
+            try:
+                if sem_label in furniture_labels:
+                    object_center_openmask, object_interaction_pose = get_pose_in_front_of_furniture(
+                        index=object_id, 
+                        min_distance=self.inspection_distance,
+                        object_description=sem_label
+                    )
+                else:
+                    object_interaction_pose = get_best_pose_in_front_of_object(
+                        index=object_id, 
+                        object_description=object_description, 
+                        min_interaction_distance=self.inspection_distance
+                    )
+            except Exception as e:
+                logger.error(f"Error calculating interaction pose: {e}")
+                await communication.inform_user(f"Could not calculate interaction pose: {str(e)}")
+                return None
+                
+            if object_interaction_pose is None:
+                logger.error("Could not determine interaction pose for object")
+                await communication.inform_user("Could not determine how to approach this object")
+                return None
+            
+            # Inform user and get confirmation
+            status_message = f"Moving to object with id {object_id}, label {sem_label} and centroid {object_centroid_pose}. "
+            status_message += f"The object interaction pose is: {object_interaction_pose}. "
+            status_message += f"The current position of the robot is {frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)}"
+            
+            await communication.inform_user(status_message)
+            
+            response = await communication.ask_user("Do you want me to move to the object? Please enter exactly 'yes' if you want me to move to the object.")
+            if response == "yes":
+                logger.info(f"User confirmed. Moving to object with pose: {object_interaction_pose}")
+                
+                try:
+                    take_control_with_function(
+                        config=self.general_config, 
+                        function=self._Move_To_Object(), 
+                        object_interaction_pose=object_interaction_pose, 
+                        body_assist=True
+                    )
+                    logger.info(f"Robot moved to the object with id {object_id}")
+                    
+                    # Add a small delay to ensure message logging is complete
+                    await asyncio.sleep(0.2)
+                    
+                    # This is where the segmentation fault might be happening - nothing should
+                    # execute after this point if we can't identify the issue
+                    return None
+                    
+                except Exception as e:
+                    error_msg = f"Error during robot movement: {str(e)}"
+                    logger.error(error_msg)
+                    await communication.inform_user(f"An error occurred while moving to the object: {str(e)}")
+                    return None
+            else:
+                await communication.inform_user("I will not move to the object.")
+
             return None
-        
-        furniture_labels = self.general_config["semantic_labels"]["furniture"]
-        if sem_label in furniture_labels:
-            object_center_openmask, object_interaction_pose = get_pose_in_front_of_furniture(index=object_id, min_distance=self.inspection_distance,object_description=sem_label)
-        else:
-            object_interaction_pose = get_best_pose_in_front_of_object(index=object_id, object_description=object_description, min_interaction_distance=self.inspection_distance)
-        
-        await communication.inform_user(f"Moving to object with id {object_id}, label {robot_state.scene_graph.nodes[object_id].sem_label} and centroid {object_centroid_pose}."
-                                        f"The object interaction pose is: {object_interaction_pose}"
-                                        f"The current position of the robot is {frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)}")
-        
-        response = await communication.ask_user("Do you want me to move to the object? Please enter exactly 'yes' if you want me to move to the object.")
-        if response == "yes":
-            take_control_with_function(config=self.general_config, function=self._Move_To_Object(), object_interaction_pose=object_interaction_pose, body_assist=True)
-            logger.info(f"Robot moved to the object with id {object_id}")
-        else:
-            await communication.inform_user("I will not move to the object.")
-
-        return None
+            
+        except Exception as e:
+            logger.error(f"Unhandled exception in move_to_object: {str(e)}")
+            await communication.inform_user(f"An unexpected error occurred: {str(e)}")
+            return None
 
         
 

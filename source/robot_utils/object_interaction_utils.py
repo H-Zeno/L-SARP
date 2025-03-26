@@ -60,7 +60,7 @@ def _get_distance_to_shelf(index: int=0, min_distance=1.10, load_from_json=False
     if len(furniture_dimensions) < 3:
         raise ValueError("Invalid furniture dimensions: Expected at least 3 elements.")
 
-    logger.info(f"Calculated distance to shelf: {max(circle_radius_width, circle_radius_height)} and the furniture dimensions are {furniture_dimensions}")
+    logger.info("Calculated distance to shelf: %s and the furniture dimensions are %s", max(circle_radius_width, circle_radius_height), furniture_dimensions)
     return max(circle_radius_width, circle_radius_height, min_distance), furniture_centroid
 
 
@@ -98,10 +98,10 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
                         try:
                             objects_in_front = robot_state.scene_graph.get_nodes_in_front_of_object_face(cabinet_center, snapped_normal)
                         except Exception as e:
-                            logger.error(f"Error getting nodes in front of face: {e}")
+                            logger.error("Error getting nodes in front of face: %s", e)
                             objects_in_front = []
                         
-                        logger.info(f"Found vertical face with original normal {normal}, snapped to {snapped_normal}. Area: {area}. Objects in front: {objects_in_front}")
+                        logger.info("Found vertical face with original normal %s, snapped to %s. Area: %s. Objects in front: %s", normal, snapped_normal, area, objects_in_front)
                         
                         vertical_faces.append({
                             'normal': snapped_normal,
@@ -110,7 +110,7 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
                             'objects_in_front': objects_in_front
                         })
                 except Exception as e:
-                    logger.error(f"Error processing face at axis {axis}, direction {direction}: {e}")
+                    logger.error("Error processing face at axis %s, direction %s: %s", axis, direction, e)
                     continue
 
         if not vertical_faces:
@@ -142,13 +142,13 @@ def _get_shelf_front(cabinet_pcd: o3d.geometry.PointCloud, cabinet_center: np.nd
                 front = max(vertical_faces, key=lambda x: x['alignment_to_robot'])
             except Exception as e:
                 # Fallback if robot position is unavailable
-                logger.warning(f"Unable to get robot position: {e}. Selecting face with fewest obstacles.")
+                logger.warning("Unable to get robot position: %s. Selecting face with fewest obstacles.", e)
                 front = min(vertical_faces, key=lambda x: len(x['objects_in_front']))
                 
         # To be more accurate, this should be extended to the face with the most free volume in front of it (for 1 meter distance)
         return front['normal']
     except Exception as e:
-        logger.error(f"Error in _get_shelf_front: {e}")
+        logger.error("Error in _get_shelf_front: %s", e)
         return np.array([-1, 0, 0])  # Default to -X direction
 
 def snap_to_cardinal(normal: np.ndarray) -> np.ndarray:
@@ -191,9 +191,10 @@ def get_pose_in_front_of_furniture(index: int=0, min_distance=1.10, object_descr
     Get the interaction pose for the robot in front of an object. 
     Currently this function only supports cabinets and shelves. 
     
-    :param index: Index of the furniture from the Deepseek result.
-    :param furniture_types: Types of furniture to consider, a string that gets feeded into Clip
-    :return: Tuple of the centroid of the furniture and the body pose.
+    :param index: Index of the furniture from the scene graph.
+    :param min_distance: Minimum distance for robot to stand from the object. Defaults to 1.10.
+    :param object_description: Description of the object.
+    :return: Tuple of the centroid of the furniture and the interaction body pose (Pose2D).
     '''
     try:
         # get necessary distance to shelf
@@ -201,9 +202,9 @@ def get_pose_in_front_of_furniture(index: int=0, min_distance=1.10, object_descr
         radius = max(0.8, radius)
 
         furniture_sem_label = robot_state.scene_graph.nodes[index].sem_label
-        logger.info(f"Looking for furniture with semantic label: {furniture_sem_label}")
+        logger.info("Looking for furniture with semantic label: %s", furniture_sem_label)
 
-        mask_path_base = config.get_subpath("masks")
+        # mask_path_base = config.get_subpath("masks")
         pred_masks_base_path = config.get_subpath("prescans")
         ending = config["pre_scanned_graphs"]["high_res"]
         # mask_csv_folder_path = os.path.join(mask_path_base, ending)
@@ -234,7 +235,7 @@ def get_pose_in_front_of_furniture(index: int=0, min_distance=1.10, object_descr
         pc = o3d.io.read_point_cloud(pc_path)
 
         good_points_idx = np.where(good_points_bool)[0]
-        environment_cloud = pc.select_by_index(good_points_idx, invert=True)
+        # environment_cloud = pc.select_by_index(good_points_idx, invert=True)
         furniture_point_cloud = pc.select_by_index(good_points_idx)
 
         front_normal = _get_shelf_front(furniture_point_cloud, furniture_centroid)
@@ -244,25 +245,26 @@ def get_pose_in_front_of_furniture(index: int=0, min_distance=1.10, object_descr
 
         # Calculate robot position based on furniture position and normal direction
         body_position_3d = furniture_centroid + front_normal * radius
-        body_pose = Pose2D((body_position_3d[0], body_position_3d[1]))
+        body_pose_2d = Pose2D((body_position_3d[0], body_position_3d[1]))
         
         # Use safe calculation of angle
         direction_towards_object = -front_normal
 
         try:
             angle = math.atan2(direction_towards_object[1], direction_towards_object[0])
+
         except Exception as e:
-            logger.error(f"Error calculating angle: {e}, using 0")
+            logger.error("Error calculating angle: %s, using 0", e)
             angle = 0.0
             
-        body_pose.set_rot_from_angle(angle)
+        body_pose_2d.set_rot_from_angle(angle)
         
-        logger.info(f"Navigation target calculated: position=({body_position_3d[0]:.2f}, {body_position_3d[1]:.2f}), angle={angle:.2f} rad")
+        logger.info("Furniture interaction pose calculated: position=(%.2f, %.2f), angle=%.2f rad", body_position_3d[0], body_position_3d[1], angle)
         
-        return furniture_centroid, body_pose
+        return furniture_centroid, body_pose_2d
     
     except Exception as e:
-        logger.error(f"Error in get_pose_in_front_of_furniture: {e}")
+        logger.error("Error in get_pose_in_front_of_furniture: %s", e)
         # Return a default safe position as fallback
         default_position = Pose2D((furniture_centroid[0] - 1.0, furniture_centroid[1]))
         default_position.set_rot_from_angle(0.0)
@@ -320,7 +322,7 @@ def get_pose_in_front_of_furniture(index: int=0, min_distance=1.10, object_descr
         # furniture_point_cloud.points = o3d.utility.Vector3dVector(robot_state.scene_graph.nodes[index].points)
 
 
-def get_best_pose_in_front_of_object(index: int, object_description: str, min_interaction_distance=1.10) -> Pose3D:
+def get_best_pose_in_front_of_object(index: int, object_description: str, min_interaction_distance=1.10) -> Pose2D:
     """
     Get the best poses for the robot to interact with an object.
     This function finds the closest piece of furniture to the object,
@@ -332,15 +334,18 @@ def get_best_pose_in_front_of_object(index: int, object_description: str, min_in
     :param index: Index of the object from the scene graph.
     :param object_description: Description of the object.
     :param min_interaction_distance: Minimum distance for robot to stand from the object. Defaults to 1.10.
-    :return: The object's interaction pose.
+    :return: The object's interaction pose (Pose2D).
     """
     item_centroid = robot_state.scene_graph.nodes[index].centroid
     item_sem_label = robot_state.scene_graph.nodes[index].sem_label
 
-    logger.info(f"Starting the process of finding the best poses in front of the object {index}.")
+    logger.info("Starting the process of finding the best poses in front of the object %s.", index)
     
     # Find the closest piece of furniture to the object
     furniture_labels = config["semantic_labels"]["furniture"]
+        
+    closest_furniture_idx = None
+    object_interaction_normal = None
     
     # Convert furniture labels to semantic label IDs
     furniture_sem_labels = []
@@ -348,35 +353,57 @@ def get_best_pose_in_front_of_object(index: int, object_description: str, min_in
         if any(furniture_type in name.lower() for furniture_type in furniture_labels):
             furniture_sem_labels.append(label)
     
-    # Check if the object might be on the ground (low z-coordinate)
-    is_on_ground = item_centroid[2] < 0.15  # If object is less than 15cm from ground
-    closest_furniture_idx = None
+    # Use scene_graph's get_nodes_in_radius method to find nodes within a reasonable radius
+    # We'll use a large enough radius to capture furniture the object might be on/in
+    nearby_nodes = robot_state.scene_graph.get_nodes_in_radius(item_centroid, 2.0)
     
-    if not is_on_ground:
-        # Use scene_graph's get_nodes_in_radius method to find nodes within a reasonable radius
-        # We'll use a large enough radius to capture furniture the object might be on/in
-        nearby_nodes = robot_state.scene_graph.get_nodes_in_radius(item_centroid, 2.0)
-        
-        # Filter to only include furniture nodes
-        furniture_nodes = [node_id for node_id in nearby_nodes 
-                          if node_id != index and  # Skip self
-                          robot_state.scene_graph.nodes[node_id].sem_label in furniture_sem_labels]
-        
-        if furniture_nodes:
+    # Filter to only include furniture nodes
+    furniture_nodes = [node_id for node_id in nearby_nodes 
+                        if node_id != index and  # Skip self
+                        robot_state.scene_graph.nodes[node_id].sem_label in furniture_sem_labels]
+    if furniture_nodes:
             # Find the closest furniture node
             furniture_distances = [np.linalg.norm(robot_state.scene_graph.nodes[node_id].centroid - item_centroid) 
                                   for node_id in furniture_nodes]
             closest_furniture_idx = furniture_nodes[np.argmin(furniture_distances)]
+
+    # Check if the object might be on the ground (low z-coordinate)
+    is_on_ground = item_centroid[2] < 0.15  # If object is less than 15cm from ground
+
+    robot_pos = frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
+    # Fix: Handle SE2Pose properly - extract x and y attributes instead of using slicing
+    if hasattr(robot_pos, 'x') and hasattr(robot_pos, 'y'):
+        # Handle SE2Pose object
+        robot_pos_xy = np.array([robot_pos.x, robot_pos.y])
+    else:
+        # Handle array-like object - use original slicing
+        robot_pos_xy = robot_pos[:2]
+
+    direction_to_object = item_centroid[:2] - robot_pos_xy  # Only consider XY plane
+    direction_to_object = direction_to_object / np.linalg.norm(direction_to_object)
+
+    if is_on_ground:
+        # Find the robot's current position and create a vector towards the object
+        robot_pos = frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
     
-    # Get or calculate the interaction normal
-    interaction_normal = None
-    
-    if not is_on_ground and closest_furniture_idx is not None:
+        # Create a 3D normal vector (horizontal approach)
+        object_interaction_normal = np.array([direction_to_object[0], direction_to_object[1], 0])
+
+    elif closest_furniture_idx is None:
+        logger.info("The object is not on the ground and there is no furniture found that the object is connected to. Let's approach from a bird's eye view.")
+
+        # Create a 3D normal vector (horizontal approach)
+        object_interaction_normal = np.array([direction_to_object[0], direction_to_object[1], 0])
+
+    # The object now is on a furniture
+    elif closest_furniture_idx is not None: 
+        
+        # Check if there's already a scene graph connection
         furniture_node = robot_state.scene_graph.nodes[closest_furniture_idx]
         
         # Check if there's already a scene graph connection
         if index not in robot_state.scene_graph.outgoing or robot_state.scene_graph.outgoing[index] != closest_furniture_idx:
-            logger.info(f"Creating scene graph connection between object {index} and furniture {closest_furniture_idx}")
+            logger.info("Creating scene graph connection between object %s and furniture %s", index, closest_furniture_idx)
             # Create a scene graph connection using scene_graph's built-in methods
             # First remove any existing connections
             if index in robot_state.scene_graph.outgoing:
@@ -388,74 +415,40 @@ def get_best_pose_in_front_of_object(index: int, object_description: str, min_in
             robot_state.scene_graph.outgoing[index] = closest_furniture_idx
             robot_state.scene_graph.ingoing.setdefault(closest_furniture_idx, []).append(index)
         
-        # Check if furniture has a normal, if not calculate it
+        # Check if furniture has a normal
         if hasattr(furniture_node, 'equation') and furniture_node.equation is not None:
-            interaction_normal = furniture_node.equation[:3]
-            interaction_normal = interaction_normal / np.linalg.norm(interaction_normal)
-            logger.info(f"Using existing furniture normal: {interaction_normal}")
+            object_interaction_normal = furniture_node.equation[:3]
+            object_interaction_normal = object_interaction_normal / np.linalg.norm(object_interaction_normal)
+            logger.info("Using existing furniture normal: %s", object_interaction_normal)
+            
+        # If no normal present, calculate it via the get_pose_in_front_of_furniture function
+        elif hasattr(furniture_node, 'equation') and furniture_node.equation is None:
+            logger.info("Furniture node %s has no normal yet, calculating it.", closest_furniture_idx)
+            get_pose_in_front_of_furniture(closest_furniture_idx, object_description="furniture", min_distance=min_interaction_distance)
+            # After calculating, now we can access the normal
+            if furniture_node.equation is not None:
+                object_interaction_normal = furniture_node.equation[:3]
+                object_interaction_normal = object_interaction_normal / np.linalg.norm(object_interaction_normal)
+            else:
+                # Fallback to a default approach if still no normal available
+                logger.warning("Failed to calculate furniture normal. Using approach from current robot position.")
+                
+                object_interaction_normal = np.array([direction_to_object[0], direction_to_object[1], 0])
 
-        else:
-            # Calculate furniture normal as in get_pose_in_front_of_furniture
-            # Get the furniture point cloud data
-            pred_masks_base_path = config.get_subpath("prescans")
-            ending = config["pre_scanned_graphs"]["high_res"]
-            pred_masks_folder = os.path.join(pred_masks_base_path, ending)
-            
-            pc_path = config.get_subpath("aligned_point_clouds")
-            ending = config["pre_scanned_graphs"]["high_res"]
-            pc_path = os.path.join(str(pc_path), ending, "scene.ply")
-            
-            df = _get_list_of_items(str(pred_masks_folder))
-            
-            furniture_sem_label = furniture_node.sem_label
-            entries = df[df["class_label"] == furniture_sem_label]
-            closest_furniture_idx_local = closest_furniture_idx
-            if closest_furniture_idx_local >= len(entries):
-                closest_furniture_idx_local = 0
-                
-            entry = entries.iloc[closest_furniture_idx_local]
-            path_ending = entry["path_ending"]
-            pred_mask_file_path = os.path.join(pred_masks_folder, path_ending)
-            
-            with open(pred_mask_file_path, "r", encoding="UTF-8") as file:
-                lines = file.readlines()
-            good_points_bool = np.asarray([bool(int(line)) for line in lines])
-            
-            pc = o3d.io.read_point_cloud(pc_path)
-            good_points_idx = np.where(good_points_bool)[0]
-            furniture_point_cloud = pc.select_by_index(good_points_idx)
-            
-            interaction_normal = _get_shelf_front(furniture_point_cloud, furniture_node.centroid)
-            logger.info(f"Calculated new furniture normal: {interaction_normal}")
-            
-            # Save the normal for future use
-            if hasattr(furniture_node, 'set_normal'):
-                furniture_node.set_normal(interaction_normal)
-                
-    # If no furniture found or object is on ground, use a default approach vector
-    if interaction_normal is None:
-        logger.info("No furniture found that the object is connected to. This could be due to the object being on the ground."
-        "Object appears to be on the ground, using default normal")
-        # For ground objects, we typically approach from a horizontal direction
-        # Find the robot's current position and create a vector towards the object
-        robot_pos = frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)
-        direction_to_object = item_centroid[:2] - robot_pos[:2]  # Only consider XY plane
-        direction_to_object = direction_to_object / np.linalg.norm(direction_to_object)
-        
-        # Create a 3D normal vector (horizontal approach)
-        interaction_normal = np.array([direction_to_object[0], direction_to_object[1], 0])
+    if object_interaction_normal is None:
+        raise ValueError("There was an error in calculating the interaction normal for the object.")
 
     # Make the object inherit the same normal as the furniture
-    robot_state.scene_graph.nodes[index].set_normal(interaction_normal)
+    robot_state.scene_graph.nodes[index].set_normal(object_interaction_normal)
 
     # Calculate robot target pose - along the interaction normal at the specified distance
-    interaction_position = item_centroid + interaction_normal * min_interaction_distance
-    interaction_pose = Pose3D(interaction_position)
-    interaction_pose.set_rot_from_direction(-interaction_normal)  # Point toward object
-    
-    logger.info(f"Created target pose in front of the object. Using normal: {interaction_normal}")
+    interaction_position = item_centroid + object_interaction_normal * min_interaction_distance
+    interaction_pose_2d = Pose2D((interaction_position[0], interaction_position[1]))
+    interaction_pose_2d.set_rot_from_direction(-object_interaction_normal)  # Point toward object
 
-    return interaction_pose
+    logger.info("Created target pose in front of the object. Using normal: %s", object_interaction_normal)
+
+    return interaction_pose_2d
 
 
 if __name__ == "__main__":

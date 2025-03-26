@@ -193,6 +193,13 @@ class ItemInteractionsPlugin:
         
         logger.info(f"Light switch with ID {light_switch_object_id} has label {sem_label} and is at position {light_switch_centroid}")
         
+        # # Check if the light switch is closer than the light switch interaction distance
+        # distance_to_light_switch = np.linalg.norm(light_switch_centroid - frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+        
+        # if distance_to_light_switch < config["LIGHT_SWITCH_DISTANCE"]:
+        #     logger.info("Great! The light switch is already in the range of motion of the robot.")
+        #     return None
+
         # Use the furniture labels from config when needed
         light_switch_interaction_pose = get_best_pose_in_front_of_object(
             light_switch_object_id, 
