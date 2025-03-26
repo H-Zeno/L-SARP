@@ -1,5 +1,4 @@
 {
-    "python.analysis.extraPaths": [
-        "./source/utils"
-    ]
+  "python.analysis.extraPaths": ["./source/utils"],
+  "remote.autoForwardPortsFallback": 0
 }

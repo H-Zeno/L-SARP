@@ -2,10 +2,10 @@
 import asyncio
 import json
 import logging
-import logging.config
 import os
 from datetime import datetime
 from pathlib import Path
+from dotenv import dotenv_values
 
 # Third-party imports
 from bosdyn import client as bosdyn_client
@@ -27,10 +27,11 @@ from LostFound.src.scene_graph import get_scene_graph
 
 # Local imports
 from configs.scenes_and_plugins_config import Scene
-
 from utils.agent_utils import invoke_agent
 from utils.recursive_config import Config
 from utils.singletons import RobotLeaseClientSingleton
+from utils.logging_utils import setup_logging
+
 
 # Initialize singletons
 robot_state = RobotStateSingleton()
@@ -38,21 +39,28 @@ robot_planner = RobotPlannerSingleton()
 robot_lease_client = RobotLeaseClientSingleton()
 frame_transformer = FrameTransformerSingleton()
 
-# Set up logging - this will be the single source of logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Set up the configuration
+config = Config()
+
+# Set up logging with OpenTelemetry integration if configured
+enable_opentelemetry = config.get("logging_settings", {}).get("enable_opentelemetry", False)
+service_name = config.get("logging_settings", {}).get("service_name", "L-SARP")
+
+env_variables = dotenv_values(".env_core_planner")
+connection_string = env_variables.get("AZURE_APP_INSIGHTS_CONNECTION_STRING")
+
+# Set up logging
+_, logger_main = setup_logging(
+    enable_opentelemetry=enable_opentelemetry,
+    service_name=service_name,
+    connection_string=connection_string
 )
-logging.getLogger("kernel").setLevel(logging.DEBUG)
+logger = logger_main
 
-logger = logging.getLogger(__name__)
-
-# Set debug level based on config or environment variable
-debug = True  # This could be moved to config
+# Set debug level based on config
+debug = config.get("logging_settings", {}).get("debug", True)
 if debug:
     logging.getLogger().setLevel(logging.DEBUG)
-
-config = Config()
 
 async def main():
     """Main entry point for the robot control system.
@@ -89,7 +97,7 @@ async def main():
         graph_save_path=scene_graph_path,
         drawers=False,
         light_switches=True,
-        vis_block=True
+        vis_block=False
     )
     scene_graph.save_as_json(scene_graph_json_path)
 

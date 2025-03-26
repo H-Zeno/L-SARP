@@ -115,7 +115,7 @@ class Config:
         return self._config.__setitem__(key, value)
 
     def get(self, key, default=None):
-        self._config.get(key, default=default)
+        return self._config.get(key, default)
 
     def get_config(self):
         return self._config

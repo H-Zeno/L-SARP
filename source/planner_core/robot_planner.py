@@ -4,11 +4,19 @@ from datetime import datetime
 import json
 import logging
 import re
+import sys
+from abc import ABC
+from collections.abc import AsyncIterable
 from openai import AsyncOpenAI
 from utils.recursive_config import Config
 import yaml
 from pathlib import Path
-from typing import Annotated, Dict, List, Optional, Tuple
+from typing import Annotated, Dict, List, Optional, Tuple, Any, ClassVar, TYPE_CHECKING
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
 
 # Third-party imports
 from dotenv import dotenv_values
@@ -52,6 +60,7 @@ robot_state = RobotStateSingleton()
 frame_transformer = FrameTransformerSingleton()
 
 config = Config()
+dotenv_values(".env_core_planner")
 
 # Just get the logger, configuration is handled in main.py
 logger = logging.getLogger(__name__)
@@ -75,28 +84,231 @@ class TaskPlannerResponse(BaseModel):
     tasks : List[TaskResponse]
 
 
+class RobotAgentBase(ChatCompletionAgent, ABC):
+    """Base class for all robot agents."""
+    SERVICE_ID: ClassVar[str] = "gpt4o"
+    
+    def _add_retrieval_plugins(self, kernel: Kernel) -> Kernel:
+        """
+        Adds all the enabled plugins to the kernel.
+        Scenes_and_plugins_config.py contains the plugin configurations for each scene.
+        """
+        # Add Enabled Plugins to the kernel
+        for plugin_name in self._enabled_retrieval_plugins:
+            if plugin_name in self._retrieval_plugins_configs:
+                factory_func, args, kernel_name = self._retrieval_plugins_configs[plugin_name]
+                plugin = factory_func(*args)
+                kernel.add_plugin(plugin, plugin_name=kernel_name)
+        return kernel
+
+    def _add_action_plugins(self, kernel: Kernel) -> Kernel:
+        """
+        Adds all the action plugins to the kernel
+        """
+        kernel.add_plugin(ItemInteractionsPlugin(), plugin_name="item_interactions")
+        kernel.add_plugin(NavigationPlugin(), plugin_name="navigation")
+        kernel.add_plugin(InspectionPlugin(), plugin_name="object_inspection")
+        
+        return kernel
+
+    def _add_planning_plugins(self) -> None:
+        """
+        Adds all the planning plugins to the kernel
+        """
+        # Register the task planning methods from this class as a plugin
+        self.kernel.add_plugin(self, plugin_name="task_planner")
+    
+    def _create_kernel(self, action_plugins=False, retrieval_plugins=False, planning_plugins=False) -> Kernel:
+        """Create and configure a kernel with all the AI services that we support."""
+        kernel = Kernel()
+        
+        # General Multimodal Intelligence model (GPT4o)
+        kernel.add_service(OpenAIChatCompletion(
+            service_id=self.GENERAL_INTELLIGENCE_SERVICE_ID,
+            api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
+            ai_model_id="gpt-4o-2024-11-20"
+        ))
+
+        # Reasoning models
+        kernel.add_service(OpenAIChatCompletion(
+            service_id="o3-mini",
+            api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
+            ai_model_id="o3-mini-2025-01-31"
+        ))
+        
+        kernel.add_service(OpenAIChatCompletion( 
+            service_id="o1",
+            api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
+            ai_model_id="o1-2024-12-17"
+        ))
+        
+        kernel.add_service(OpenAIChatCompletion(
+            service_id="deepseek-r1",
+            ai_model_id="deepseek-ai/deepseek-r1",
+            async_client=AsyncOpenAI(
+                api_key=dotenv_values(".env_core_planner").get("DEEPSEEK_API_KEY"),
+                base_url="https://integrate.api.nvidia.com/v1"
+            )
+        ))
+        
+        # Small and cheap model for the processing of certain user responses
+        kernel.add_service(OpenAIChatCompletion(
+            service_id="small_cheap_model",
+            api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
+            ai_model_id="gpt-4o-mini"
+        ))
+        
+        if action_plugins:
+            kernel = self._add_action_plugins(kernel)
+            
+        if retrieval_plugins:
+            kernel = self._add_retrieval_plugins(kernel)
+            
+        if planning_plugins:
+            kernel = self._add_planning_plugins(kernel)
+            
+        return kernel
+    
+
+    @override
+    async def invoke(
+        self,
+        history: ChatHistory,
+        arguments: KernelArguments | None = None,
+        kernel: "Kernel | None" = None,
+        **kwargs: Any,
+        
+    ) -> AsyncIterable[ChatMessageContent]:
+        
+        ### Here we can potentially filter out internal messages from other agents: !
+        # # Since the history contains internal messages from other agents,
+        # # we will do our best to filter out those. Unfortunately, there will
+        # # be a side effect of losing the context of the conversation internal
+        # # to the agent when the conversation is handed back to the agent, i.e.
+        # # previous function call results.
+        # filtered_chat_history = ChatHistory()
+        # for message in history:
+        #     content = message.content
+        # # We don't want to add messages whose text content is empty.
+        # # Those messages are likely messages from function calls and function results.
+        # if content:
+        #     filtered_chat_history.add_message(message)
+                
+        async for response in super().invoke(history, arguments=arguments, kernel=kernel, **kwargs):
+            yield response
+
+
+class TaskPlannerAgent(RobotAgentBase):
+    """Agent responsible for planning tasks based on goals."""
+    
+    def __init__(self):
+        kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, planning_plugins=False)
+        
+        settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.GENERAL_INTELLIGENCE_SERVICE_ID)
+        settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
+        
+        parser = PydanticOutputParser(pydantic_object=TaskPlannerResponse)
+        model_desc = parser.get_format_instructions()
+        
+        super().__init__(
+            service_id=self.GENERAL_INTELLIGENCE_SERVICE_ID,
+            kernel=kernel,
+            arguments=KernelArguments(settings=settings),
+            name="TaskPlannerAgent",
+            instructions=TASK_PLANNER_AGENT_INSTRUCTIONS.format(model_description=model_desc),
+            description="Select me to plan sequential tasks that the robot should perform to complete the goal."
+        )
+
+    @override
+    async def invoke(
+        self,
+        history: ChatHistory,
+        arguments: KernelArguments | None = None,
+        kernel: "Kernel | None" = None,
+        **kwargs: Any,
+    ) -> AsyncIterable[ChatMessageContent]:
+        
+        async for response_message in super().invoke(history, arguments=arguments, kernel=kernel, **kwargs):
+            yield response_message
+
+
+class TaskExecutionAgent(RobotAgentBase):
+    """Agent responsible for executing tasks."""
+    
+    def __init__(self):
+        kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, planning_plugins=True)
+        
+        settings = kernel.get_prompt_executions_settings_from_service_id(service_id=self.GENERAL_INTELLIGENCE_SERVICE_ID)
+        settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
+        
+        super().__init__(
+            name="TaskExecutionAgent",
+            instructions=TASK_EXECUTION_AGENT_INSTRUCTIONS,
+            service_id=self.GENERAL_INTELLIGENCE_SERVICE_ID,
+            kernel=kernel,
+            arguments=KernelArguments(settings=settings),
+            description="Select me to execute tasks that are generated/planned by the TaskPlannerAgent."
+        )
+
+    @override
+    async def invoke(
+        self,
+        history: ChatHistory,
+        arguments: KernelArguments | None = None,
+        kernel: "Kernel | None" = None,
+        **kwargs: Any,
+    ) -> AsyncIterable[ChatMessageContent]:
+        async for response_message in super().invoke(history, arguments=arguments, kernel=kernel, **kwargs):
+            yield response_message
+
+
+# class GoalCompletionCheckerAgent(RobotAgentBase):
+#     """Agent responsible for checking if goals have been completed."""
+    
+#     def __init__(self):
+#         super().__init__(
+#             name="GoalCompletionCheckerAgent",
+#             instructions=GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
+#             service_id="gpt4o",
+#             function_choice_behavior=FunctionChoiceBehavior.Auto()
+#         )
+
+#     @override
+#     async def invoke(
+#         self,
+#         history: ChatHistory,
+#         arguments: KernelArguments | None = None,
+#         kernel: "Kernel | None" = None,
+#         **kwargs: Any,
+#     ) -> AsyncIterable[ChatMessageContent]:
+#         async for response_message in super().invoke(history, arguments=arguments, kernel=kernel, **kwargs):
+#             yield response_message
+
+
+class ApprovalTerminationStrategy(TerminationStrategy):
+    """A strategy for determining when an agent should terminate."""
+
+    async def should_agent_terminate(self, agent, history):
+        """Check if the agent should terminate."""
+        return "Approved! The goal is completed!" in history[-1].content.lower()
+
+
 class RobotPlanner:
     """
-    Class that handles the planning of the robot.
+    Class that handles the planning of the robot using specialized agents.
     """
 
-    def __init__(
-        self, 
-        scene: Scene,
-    ) -> None:
+    def __init__(self, scene: Scene) -> None:
         """
         Constructor for the RobotPlanner class that handles plugin initialization and planning.
         """
-        # Load settings
-        self._planner_settings = dotenv_values(".env_core_planner")
-
         # Set the configurations for the scene
         self.scene = scene
-        # self._enabled_retrieval_plugins = self.scene.retrieval_plugins
-        # self._retrieval_plugins_configs = plugin_configs
 
-        # Create the kernel
-        self.kernel = Kernel()
+        # Initialize agents
+        self.task_planner_agent = TaskPlannerAgent()
+        self.task_execution_agent = TaskExecutionAgent()
+        # self.goal_completion_checker_agent = GoalCompletionCheckerAgent()
 
         # Planner states
         self.goal = None
@@ -109,241 +321,34 @@ class RobotPlanner:
 
         # Task planning variables
         self.json_format_chat_history = None
-        
-        # Initialize the system
-        self.setup_services()
-        # self.add_retrieval_plugins()
-        self.add_action_plugins()
-        self.add_planning_plugins()
-        self.initialize_task_planner_agent()
-        self.initialize_task_execution_agent()
-        # self.initialize_goal_completion_checker_agent()
-
-    def add_retrieval_plugins(self) -> None:
-        """
-        Adds all the enabled plugins to the kernel.
-        Scenes_and_plugins_config.py contains the plugin configurations for each scene.
-        """
-        
-        # Add Enabled Plugins to the kernel
-        for plugin_name in self._enabled_retrieval_plugins:
-            if plugin_name in self._retrieval_plugins_configs:
-                factory_func, args, kernel_name = self._retrieval_plugins_configs[plugin_name]
-                plugin = factory_func(*args)
-                self.kernel.add_plugin(plugin, plugin_name=kernel_name)
-
-    def add_action_plugins(self) -> None:
-        """
-        Adds all the action plugins to the kernel
-        """
-        self.kernel.add_plugin(ItemInteractionsPlugin(), plugin_name="item_interactions")
-        self.kernel.add_plugin(NavigationPlugin(), plugin_name="navigation")
-        self.kernel.add_plugin(InspectionPlugin(), plugin_name="object_inspection")
-
-    def add_planning_plugins(self) -> None:
-        """
-        Adds all the planning plugins to the kernel
-        """
-        # Register the task planning methods from this class as a plugin
-        self.kernel.add_plugin(self, plugin_name="task_planner")
-
-    def setup_services(self) -> None:
-        """
-        Set up AI services with appropriate models and API keys.
-        Configures both the main GPT-4 model and the auxiliary reasoning model.
-        """
-
-        # General Multimodal Intelligence model (GPT4o)
-        self.kernel.add_service(OpenAIChatCompletion(
-            service_id="gpt4o",
-            api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="gpt-4o-2024-11-20"
-        ))
-
-        # Reasoning models
-        self.kernel.add_service(OpenAIChatCompletion(
-            service_id="o3-mini",
-            api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="o3-mini-2025-01-31"
-        ))
-        
-        self.kernel.add_service(OpenAIChatCompletion( 
-            service_id="o1",
-            api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="o1-2024-12-17"
-        ))
-        
-        self.kernel.add_service(OpenAIChatCompletion(
-            service_id="deepseek-r1",
-            ai_model_id="deepseek-ai/deepseek-r1",
-            async_client=AsyncOpenAI(
-                api_key=self._planner_settings.get("DEEPSEEK_API_KEY"),
-                base_url="https://integrate.api.nvidia.com/v1"
-            )
-        ))
-        
-        # Small and cheap model for the processing of certain user responses
-        self.kernel.add_service(OpenAIChatCompletion(
-            service_id="small_cheap_model",
-            api_key=self._planner_settings.get("OPENAI_API_KEY"),
-            ai_model_id="gpt-4o-mini"
-        ))
-
-    def initialize_task_planner_agent(self) -> None:
-        """
-        Initializes the task generation agent.
-        """
-        parser = PydanticOutputParser(pydantic_object=TaskPlannerResponse)
-        model_desc = parser.get_format_instructions()
-
-        # Create task generation agent with auto function calling
-        task_generation_endpoint_settings = OpenAIChatPromptExecutionSettings(
-            max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
-            temperature=float(self._planner_settings.get("TEMPERATURE")),
-            top_p=float(self._planner_settings.get("TOP_P")),
-            structured_json_response=False,
-            function_choice_behavior=FunctionChoiceBehavior.Auto() # auto function calling
-        )
-        self.task_planner_agent = ChatCompletionAgent(
-            service_id="gpt4o",
-            kernel=self.kernel,
-            name="TaskPlannerAgent",
-            instructions=TASK_PLANNER_AGENT_INSTRUCTIONS.format(model_description=model_desc),
-            execution_settings=task_generation_endpoint_settings
-        )
-
-    def initialize_task_execution_agent(self) -> None:
-        """
-        Initializes the task execution agent.
-        """
-
-        task_execution_endpoint_settings = OpenAIChatPromptExecutionSettings(
-            service_id="gpt4o",
-            max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
-            temperature=float(self._planner_settings.get("TEMPERATURE")),
-            top_p=float(self._planner_settings.get("TOP_P")),
-            function_choice_behavior=FunctionChoiceBehavior.Auto(),
-        )
-
-        # Create task execution agent with auto function calling
-        self.task_execution_agent = ChatCompletionAgent(
-            service_id="gpt4o",
-            kernel=self.kernel,
-            name="TaskExecutionAgent",
-            instructions=TASK_EXECUTION_AGENT_INSTRUCTIONS,
-            execution_settings=task_execution_endpoint_settings
-        )
-
-    def initialize_goal_completion_checker_agent(self) -> None:
-        """
-        Initializes the goal completion checker agent.
-        """
-        goal_completion_checker_endpoint_settings = OpenAIChatPromptExecutionSettings(
-            service_id="gpt4o",
-            max_tokens=int(self._planner_settings.get("MAX_TOKENS")),
-            temperature=float(self._planner_settings.get("TEMPERATURE")),
-            top_p=float(self._planner_settings.get("TOP_P")),
-            function_choice_behavior=FunctionChoiceBehavior.Auto()
-        )
-        self.goal_completion_checker_agent = ChatCompletionAgent(
-            service_id="gpt4o",
-            kernel=self.kernel,
-            name="GoalCompletionCheckerAgent",
-            instructions=GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
-            execution_settings=goal_completion_checker_endpoint_settings
-        )
-
-    # def setup_task_completion_group_chat(self):
-    #     # Create chat for requirement analysis
-
-    #     selection_function = KernelFunctionFromPrompt(
-    #         function_name="selection",
-    #         prompt=f"""
-    #         Examine the provided RESPONSE and choose the next participant.
-    #         State only the name of the chosen participant without explanation.
-    #         Never choose the participant named in the RESPONSE.
-
-    #         Choose only from these participants:
-    #         - {self.task_planner_agent.name}
-    #         - {self.task_execution_agent.name}
-
-    #         Rules:
-    #         - If the {self.task_execution_agent.name} is experiencing a problem with executing the task, please choose the {self.task_planner_agent.name} to help and adjust the plan.
-
-    #         RESPONSE:
-    #         {{{{$lastmessage}}}}
-    #         """
-    #     )
-    #     termination_keyword = "Task Completed!"
-
-    #     termination_function = KernelFunctionFromPrompt(
-    #         function_name="termination",
-    #         prompt=f"""
-    #         Examine the RESPONSE and determine if the task is completed. To determine if the task is completed, you have access to the following information:
-    #         1. The task that has to be completed
-    #         2. The plan generated by the {self.task_planner_agent.name}
-    #         3. The tasks that have been completed so far
-    #         4. The current state of the environment
-
-    #         If the task is achieved, respond with a single word without explanation: {termination_keyword}
-    #         If the goal is not yet achieved, respond with a single word without explanation: CONTINUE
-
-    #         1. Task to be completed: {self.task}
-    #         2. The plan generated by the {self.task_planner_agent.name}:
-    #         3. The tasks that have been completed so far: {self.tasks_completed}
-    #         4. The current state of the environment (scene graph): {robot_state.scene_graph}
-
-    #         RESPONSE:
-    #         {{{{$lastmessage}}}}
-    #         """
-    #     )
-
-    #     self.task_completion_group_chat = AgentGroupChat(
-    #         agents=[self.task_planner_agent, self.task_execution_agent],
-    #         selection_strategy=KernelFunctionSelectionStrategy(
-    #         initial_agent=self.task_planner_agent,
-    #         function=selection_function,
-    #         kernel=self.kernel,
-    #         result_parser=lambda result: str(result.value[0]).strip() if result.value[0] is not None else self.task_execution_agent.name,
-    #         history_variable_name="lastmessage",
-    #     ),
-    #     termination_strategy=KernelFunctionTerminationStrategy(
-    #         agents=[self.goal_completion_checker_agent],
-    #         function=termination_function,
-    #         kernel=self.kernel,
-    #         result_parser=lambda result: termination_keyword in str(result.value[0]).lower(),
-    #         history_variable_name="lastmessage",
-    #         maximum_iterations=10,
-    #     ),
-    #     )
-    #     logger.debug(f" Agent Group Chat successfully setup.")
-
-    #     return self.task_completion_group_chat
 
     async def _create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> str:
+        """Create a task plan based on the current goal and robot state."""
         # Check if json_format_chat_history exists
-
-
         if self.json_format_chat_history == None:
             logger.info("Initializing json_format_chat_history as it is None")
             self.json_format_chat_history = ChatHistory()
             
-        plan_generation_prompt = CREATE_TASK_PLANNER_PROMPT_TEMPLATE.format(goal=self.goal, 
-                                                                             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()), 
-                                                                             robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)))
+        plan_generation_prompt = CREATE_TASK_PLANNER_PROMPT_TEMPLATE.format(
+            goal=self.goal, 
+            scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()), 
+            robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+        )
 
         logger.info("========================================")
         logger.info(f"Plan generation prompt: {plan_generation_prompt}")
         logger.info("========================================")
 
-        plan_response, self.json_format_chat_history = await invoke_agent(agent=self.task_planner_agent, 
-                                                                          chat_history=self.json_format_chat_history,
-                                                                          input_text_message=additional_message + plan_generation_prompt, 
-                                                                          input_image_message=robot_state.get_current_image_content())
+        plan_response, self.json_format_chat_history = await invoke_agent(
+            agent=self.task_planner_agent, 
+            chat_history=self.json_format_chat_history,
+            input_text_message=additional_message + plan_generation_prompt, 
+            input_image_message=robot_state.get_current_image_content()
+        )
+        
         logger.info("========================================")
         logger.info(f"Initial plan full response: {str(plan_response)}")
         logger.info("========================================")
-
 
         # Define the pattern to extract everything before ```json
         pattern_before_json = r"(.*?)```json"
@@ -382,24 +387,28 @@ class RobotPlanner:
 
     @kernel_function(description="Function to call when something happens that doesn't follow the initial plan generated by the task planning agent.")
     async def update_task_plan(self, issue_description: Annotated[str, "Detailed description of the current explanation and what went different to the original plan"]) -> None:
+        """Update the task plan based on issues encountered during execution."""
         if self.json_format_chat_history == None:
             self.json_format_chat_history = ChatHistory()
             
         self.replanned = True
         
-        update_plan_prompt = UPDATE_TASK_PLANNER_PROMPT_TEMPLATE.format(goal=self.goal,
-                                                                        previous_plan=self.plan,
-                                                                        issue_description=issue_description, 
-                                                                        tasks_completed=', '.join(map(str, self.tasks_completed)), 
-                                                                        planning_chat_history=self.planning_chat_history, 
-                                                                        scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-                                                                        robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)))
-        
+        update_plan_prompt = UPDATE_TASK_PLANNER_PROMPT_TEMPLATE.format(
+            goal=self.goal,
+            previous_plan=self.plan,
+            issue_description=issue_description, 
+            tasks_completed=', '.join(map(str, self.tasks_completed)), 
+            planning_chat_history=self.planning_chat_history, 
+            scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
+            robot_position=str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+        )
 
-        updated_plan_response, self.json_format_chat_history = await invoke_agent(agent=self.task_planner_agent, 
-                                                                                  chat_history=self.json_format_chat_history,
-                                                                                  input_text_message=update_plan_prompt, 
-                                                                                  input_image_message=robot_state.get_current_image_content())
+        updated_plan_response, self.json_format_chat_history = await invoke_agent(
+            agent=self.task_planner_agent, 
+            chat_history=self.json_format_chat_history,
+            input_text_message=update_plan_prompt, 
+            input_image_message=robot_state.get_current_image_content()
+        )
 
         logger.info("========================================")
         logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
@@ -411,8 +420,6 @@ class RobotPlanner:
 
         # Extract and assign to reasoning variable
         chain_of_thought = match_before_json.group(1).strip() if match_before_json else ""
-
-        chain_of_thought = ""
 
         pattern = r"```json\s*(.*?)\s*```"
         match = re.search(pattern, updated_plan_response, re.DOTALL)
@@ -456,14 +463,6 @@ class RobotPlanner:
         logger.info(f"Goal set to: {self.goal}. Initial plan created.")
 
         return self.plan, chain_of_thought
-
-
-class ApprovalTerminationStrategy(TerminationStrategy):
-    """A strategy for determining when an agent should terminate."""
-
-    async def should_agent_terminate(self, agent, history):
-        """Check if the agent should terminate."""
-        return "Approved! The goal is completed!" in history[-1].content.lower()
 
 
 class RobotPlannerSingleton(_SingletonWrapper):

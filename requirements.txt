@@ -67,6 +67,9 @@ nest-asyncio~=1.6
 langchain
 emoji
 
+# Basic logging without OpenTelemetry for now
+# OpenTelemetry can be installed separately if needed
+
 # Mask3D client requirements
 requests>=2.25.0
 numpy>=1.19.0
