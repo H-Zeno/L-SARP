@@ -32,7 +32,8 @@ def _get_list_of_items(folder_path: str) -> pd.DataFrame:
     Read and combine multiple prediction files (predictions.txt, predictions_light_switches.txt,
     and predictions_drawers.txt) that include the output from Mask3D.
     Each file consists of 3 columns which specify the file that indexes the points 
-    belonging to the object, its label, and the confidence.
+    belonging to the object, its label, and the confidence. 
+    This function outputs all the items/objects that have been detected in the point cloud.
     
     :param folder_path: path to the folder containing prediction files
     :return: pandas dataframe with the combined parsed data
