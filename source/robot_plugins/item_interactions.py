@@ -52,15 +52,16 @@ frame_transformer = FrameTransformerSingleton()
 communication = CommunicationPlugin()
 
 logger = logging.getLogger("plugins")
-config = Config("object_interaction_configs")
+general_config = Config()
+object_interaction_config = Config("object_interaction_configs")
+planner_settings = dotenv_values(".env_core_planner")
 
 class ItemInteractionsPlugin:
     
     class _Push_Light_Switch(ControlFunction):
         light_switch_detection = LightSwitchDetection()
-        light_switch_interaction = LightSwitchInteraction(frame_transformer, config)
-        planner_settings = dotenv_values(".env_core_planner")
-
+        light_switch_interaction = LightSwitchInteraction(frame_transformer, object_interaction_config)
+        
         def __call__(
             self,
             config: Config,
@@ -131,7 +132,7 @@ class ItemInteractionsPlugin:
             logger.info("affordance detection starting...")
             affordance_dict = light_switch_detection.light_switch_affordance_detection(
                 refined_box, color_response, 
-                config["AFFORDANCE_DICT_LIGHT_SWITCHES"], self.planner_settings.get("OPENAI_API_KEY")
+                config["AFFORDANCE_DICT_LIGHT_SWITCHES"], planner_settings.get("OPENAI_API_KEY")
             )
 
             #################################
@@ -182,7 +183,7 @@ class ItemInteractionsPlugin:
     async def push_light_switch(self, light_switch_object_id: Annotated[int, "The ID of the light switch object"], 
                                 object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
         
-        if config["robot_planner_settings"]["use_with_robot"] is not True:
+        if general_config["robot_planner_settings"]["use_with_robot"] is not True:
             logger.info("Pushed light switch in simulation (without robot).")
             return None
 
@@ -204,7 +205,7 @@ class ItemInteractionsPlugin:
         light_switch_interaction_pose = get_best_pose_in_front_of_object(
             light_switch_object_id, 
             object_description=object_description, 
-            min_interaction_distance=config["LIGHT_SWITCH_DISTANCE"] 
+            min_interaction_distance=object_interaction_config["LIGHT_SWITCH_DISTANCE"] 
         )
 
         light_switch_interaction_pose_2d = light_switch_interaction_pose.to_dimension(2)
@@ -232,7 +233,7 @@ class ItemInteractionsPlugin:
         
         if response == "yes":
             take_control_with_function(
-                config=config,  # Changed from self.config to global config 
+                config=object_interaction_config,  # Changed from self.config to global config 
                 function=self._Push_Light_Switch(), 
                 light_switch_object_id=light_switch_object_id
             )

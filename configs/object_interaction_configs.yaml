@@ -3,9 +3,9 @@
 GRIPPER_WIDTH: 0.03 # the width of the gripper
 GRIPPER_HEIGHT: 0.03 # the height of the gripper
 
-X_BODY: 1.4
-Y_BODY: 0.85
-ANGLE_BODY: 175
+# X_BODY: 1.4
+# Y_BODY: 0.85
+# ANGLE_BODY: 175
 
 INSPECTION_DISTANCE: 1.30
 LIGHT_SWITCH_DISTANCE: 1.10 # the distance to stand from the light switch

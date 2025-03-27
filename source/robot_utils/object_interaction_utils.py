@@ -204,73 +204,68 @@ def get_pose_in_front_of_furniture(index: int=0, min_distance=1.10, object_descr
         furniture_sem_label = robot_state.scene_graph.nodes[index].sem_label
         logger.info("Looking for furniture with semantic label: %s", furniture_sem_label)
 
-        # mask_path_base = config.get_subpath("masks")
+        # Load point cloud and mask data
         pred_masks_base_path = config.get_subpath("prescans")
         ending = config["pre_scanned_graphs"]["high_res"]
-        # mask_csv_folder_path = os.path.join(mask_path_base, ending)
         pred_masks_folder = os.path.join(pred_masks_base_path, ending)
+        pc_path = os.path.join(config.get_subpath("aligned_point_clouds"), ending, "scene.ply")
 
-        pc_path = config.get_subpath("aligned_point_clouds")
-        ending = config["pre_scanned_graphs"]["high_res"]
-        pc_path = os.path.join(str(pc_path), ending, "scene.ply")
-
-        # logging.info("Starting the process of finding the best poses in front of the object.")
         df = _get_list_of_items(str(pred_masks_folder))
-
-        # get all entries for our item label
         entries = df[df["class_label"] == furniture_sem_label]
-        if index > len(entries) or index < (-len(entries) + 1):
+        
+        if index >= len(entries) or index < (-len(entries)):
             index = 0
+            logger.warning("Index out of range, defaulting to 0")
 
-        # get the mask of the item
-        entry = entries.iloc[index]
-        path_ending = entry["path_ending"]
-        pred_mask_file_path = os.path.join(pred_masks_folder, path_ending)
+        try:
+            # Get mask data
+            entry = entries.iloc[index]
+            path_ending = entry["path_ending"]
+            pred_mask_file_path = os.path.join(pred_masks_folder, path_ending)
 
-        with open(pred_mask_file_path, "r", encoding="UTF-8") as file:
-            lines = file.readlines()
-        good_points_bool = np.asarray([bool(int(line)) for line in lines])
-        
-        # read the point cloud, select by indices specified in the file
-        pc = o3d.io.read_point_cloud(pc_path)
-
-        good_points_idx = np.where(good_points_bool)[0]
-        # environment_cloud = pc.select_by_index(good_points_idx, invert=True)
-        furniture_point_cloud = pc.select_by_index(good_points_idx)
-
-        front_normal = _get_shelf_front(furniture_point_cloud, furniture_centroid)
-        
-        # Save the normal of the furniture in the scene graph
-        robot_state.scene_graph.nodes[index].set_normal(front_normal)
-
-        # Calculate robot position based on furniture position and normal direction
-        interaction_position_3d = furniture_centroid + front_normal * radius
-        interaction_pose_3d = Pose3D(interaction_position_3d)
-        # interaction_pose_2d = Pose2D((interaction_position_3d[0], interaction_position_3d[1]))
-        
-        # Use safe calculation of angle
-        direction_towards_furniture = -front_normal
-
-        interaction_pose_3d.set_rot_from_direction(direction_towards_furniture)
-
-        # try:
-        #     angle = math.atan2(direction_towards_furniture[1], direction_towards_furniture[0])
-
-        # except Exception as e:
-        #     logger.error("Error calculating angle: %s, using 0", e)
-        #     angle = 0.0
+            with open(pred_mask_file_path, "r", encoding="UTF-8") as file:
+                lines = file.readlines()
+            good_points_bool = np.asarray([bool(int(line)) for line in lines])
             
-        # interaction_pose_2d.set_rot_from_angle(angle)
-        logger.info("Furniture interaction pose calculated: position=(%.2f, %.2f, %.2f), direction=(%.2f, %.2f, %.2f)", interaction_position_3d[0], interaction_position_3d[1], interaction_position_3d[2], interaction_pose_3d.direction()[0], interaction_pose_3d.direction()[1], interaction_pose_3d.direction()[2])
-        
-        return interaction_pose_3d
-    
+            # Read and process point cloud
+            pc = o3d.io.read_point_cloud(pc_path)
+            if not pc.has_points():
+                raise ValueError("Point cloud is empty")
+
+            good_points_idx = np.where(good_points_bool)[0]
+            if len(good_points_idx) == 0:
+                raise ValueError("No valid points found in mask")
+
+            # Select points and ensure memory is freed
+            furniture_point_cloud = pc.select_by_index(good_points_idx)
+            pc = None  # Help garbage collection
+
+            # Get front normal and calculate pose
+            front_normal = _get_shelf_front(furniture_point_cloud, furniture_centroid)
+            if front_normal is None:
+                raise ValueError("Could not determine furniture front normal")
+
+            # Save normal and calculate pose
+            robot_state.scene_graph.nodes[index].set_normal(front_normal)
+            interaction_position_3d = furniture_centroid + front_normal * radius
+            interaction_pose_3d = Pose3D(interaction_position_3d)
+            interaction_pose_3d.set_rot_from_direction(-front_normal)
+
+            logger.info("Furniture interaction pose calculated: position=(%.2f, %.2f, %.2f), direction=(%.2f, %.2f, %.2f)", 
+                       interaction_position_3d[0], interaction_position_3d[1], interaction_position_3d[2],
+                       interaction_pose_3d.direction()[0], interaction_pose_3d.direction()[1], interaction_pose_3d.direction()[2])
+            
+            return interaction_pose_3d
+
+        except Exception as e:
+            logger.error("Error processing point cloud data: %s", e)
+            raise
+
     except Exception as e:
         logger.error("Error in get_pose_in_front_of_furniture: %s", e)
         # Return a default safe position as fallback
         default_pose = Pose3D(furniture_centroid + np.array([1.0, 0.0, 0.0]))
         default_pose.set_rot_from_direction(np.array([1.0, 0.0, 0.0]))
-
         return default_pose
     
 
@@ -425,38 +420,23 @@ def get_best_pose_in_front_of_object(index: int, object_description: str, min_in
         elif hasattr(furniture_node, 'equation') and furniture_node.equation is None:
             logger.info("Furniture node %s has no normal yet, calculating it.", closest_furniture_idx)
             furniture_interaction_pose = get_pose_in_front_of_furniture(closest_furniture_idx, object_description="furniture", min_distance=min_interaction_distance)
+            logger.info("Furniture interaction pose: %s", furniture_interaction_pose)
             object_interaction_normal = -furniture_interaction_pose.direction()
-
-            # # After calculating, now we can access the normal
-            # furniture_node = robot_state.scene_graph.nodes[closest_furniture_idx]
-
-            # if furniture_node.equation is not None:
-            #     object_interaction_normal = furniture_node.equation[:3]
-            #     object_interaction_normal = object_interaction_normal / np.linalg.norm(object_interaction_normal)
-            # else:
-            #     # Fallback to a default approach if still no normal available
-            #     logger.warning("Failed to calculate furniture normal. Using approach from current robot position.")
-            #     object_interaction_normal = np.array([direction_to_object[0], direction_to_object[1], 0])
 
     if object_interaction_normal is None:
         raise ValueError("There was an error in calculating the interaction normal for the object.")
 
     # Make the object inherit the same normal as the furniture
+    logger.info("Setting normal for object %s to %s", index, object_interaction_normal)
     robot_state.scene_graph.nodes[index].set_normal(object_interaction_normal)
 
+    logger.info("Calculating interaction pose for object %s", index)
     interaction_position_3d = item_centroid + object_interaction_normal * min_interaction_distance
     interaction_pose_3d = Pose3D(interaction_position_3d)
 
     # Use safe calculation of angle
     direction_towards_object = -object_interaction_normal
 
-    # try:
-    #     angle = math.atan2(direction_towards_object[1], direction_towards_object[0])
-
-    # except Exception as e:
-    #     logger.error("Error calculating angle: %s, using 0", e)
-    #     angle = 0.0
-    
     interaction_pose_3d.set_rot_from_direction(direction_towards_object)
     
     logger.info("Object interaction pose calculated: position=(%.2f, %.2f, %.2f), direction=(%.2f, %.2f, %.2f)", interaction_position_3d[0], interaction_position_3d[1], interaction_position_3d[2], interaction_pose_3d.direction()[0], interaction_pose_3d.direction()[1], interaction_pose_3d.direction()[2])

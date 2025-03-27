@@ -1,4 +1,5 @@
 {
-    "w1": "Please inspect everything that could contain water in the room first, after which you should push the light switch.",
-    "w2": "I need to water my plant."
+    "w1": "Can you please navigate to the light switch directly and press it.",
+    "w2": "Please inspect everything that could contain water in the room first, after which you should push the light switch.",
+    "w3": "I need to water my plant."
 }
