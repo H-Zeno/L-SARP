@@ -127,7 +127,7 @@ class NavigationPlugin:
             
             try:
                 if sem_label in furniture_labels:
-                    object_center_openmask, object_interaction_pose = get_pose_in_front_of_furniture(
+                    object_interaction_pose = get_pose_in_front_of_furniture(
                         index=object_id, 
                         min_distance=self.inspection_distance,
                         object_description=sem_label
@@ -135,8 +135,8 @@ class NavigationPlugin:
                 else:
                     object_interaction_pose = get_best_pose_in_front_of_object(
                         index=object_id, 
+                        min_interaction_distance=self.inspection_distance,
                         object_description=object_description, 
-                        min_interaction_distance=self.inspection_distance
                     )
             except Exception as e:
                 logger.error(f"Error calculating interaction pose: {e}")
@@ -163,7 +163,7 @@ class NavigationPlugin:
                     take_control_with_function(
                         config=self.general_config, 
                         function=self._Move_To_Object(), 
-                        object_interaction_pose=object_interaction_pose, 
+                        object_interaction_pose=object_interaction_pose.to_dimension(2), 
                         body_assist=True
                     )
                     logger.info(f"Robot moved to the object with id {object_id}")
