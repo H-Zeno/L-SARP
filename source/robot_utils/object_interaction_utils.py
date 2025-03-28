@@ -379,7 +379,7 @@ def get_best_pose_in_front_of_object(index: int, object_description: str, min_in
         logger.info("The object is not on the ground and there is no furniture found that the object is connected to. Let's approach from a bird's eye view.")
 
         # Create a 3D normal vector (horizontal approach)
-        object_interaction_normal = -np.array([direction_to_object[0], direction_to_object[1], 0])
+        object_interaction_normal = -np.array([birds_eye_direction_to_object[0], birds_eye_direction_to_object[1], 0])
 
     # The object now is on a furniture
     elif closest_furniture_idx is not None: 

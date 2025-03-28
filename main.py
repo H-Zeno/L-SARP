@@ -222,6 +222,10 @@ async def main():
                 execution_thread = None
                 
                 while True:
+                    if robot_planner.goal_completed:
+                        logger.info("Goal completed successfully!")
+                        break
+
                     for task in robot_planner.plan["tasks"]:
                         robot_planner.task = task
                         logger.info("%s\nExecuting task: %s\n%s", separator, task, separator)
@@ -250,19 +254,11 @@ async def main():
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned:
                             robot_planner.replanned = False
+                            # When replanned, the task is not completed
                             break
 
                         robot_planner.tasks_completed.append(task)
-                
-                        # Check if all tasks are completed
-                        if len(robot_planner.tasks_completed) == len(robot_planner.plan["tasks"]):
-                            # Goal completed
-                            logger.info("Goal completed successfully!")
-                            break
-                    
-                    # If we've completed all tasks or not replanning, break out of the main loop
-                    if not robot_planner.replanned:
-                        break
+
 
             logger.info("Finished processing Offline Predefined Goals")
 

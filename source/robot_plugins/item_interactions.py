@@ -10,6 +10,7 @@ from dotenv import dotenv_values
 import numpy as np
 from pathlib import Path
 from typing import Annotated, Optional, Set
+from scipy.spatial.transform import Rotation
 
 # =============================================================================
 # Bosdyn and Robot Utilities
@@ -17,7 +18,10 @@ from bosdyn.client import Sdk
 from bosdyn.api.image_pb2 import ImageResponse
 from robot_utils.basic_movements import (
     carry_arm, gaze, stow_arm, move_body)
-from robot_utils.advanced_movement import push_light_switch, turn_light_switch, move_body_distanced, push
+from robot_utils.advanced_movement import (
+    push_light_switch, turn_light_switch, move_body_distanced, push,
+    positional_grab
+)
 from robot_utils.frame_transformer import FrameTransformerSingleton
 from robot_utils.video import (
     localize_from_images, get_camera_rgbd, set_gripper_camera_params, set_gripper, relocalize,
@@ -28,7 +32,9 @@ from robot_utils.object_interaction_utils import get_best_pose_in_front_of_objec
 from robot_plugins.communication import CommunicationPlugin
 from utils.light_switch_interaction import LightSwitchDetection, LightSwitchInteraction
 from utils.pose_utils import calculate_light_switch_poses
-light_switch_detection = LightSwitchDetection()
+from utils.mask3D_interface import get_coordinates_from_item
+from utils.point_clouds import body_planning, get_radius_env_cloud
+from utils import graspnet_interface
 
 # =============================================================================
 # Custom Utilities
@@ -103,15 +109,15 @@ class ItemInteractionsPlugin:
             #################################
             # Detect the light switch bounding boxes and poses in the scene
             #################################
-            boxes = light_switch_detection.predict_light_switches(color_response[0], vis_block=True)
-            logger.info(f"INITIAL LIGHT SWITCH DETECTION")
-            logger.info(f"Number of detected switches: {len(boxes)}")
+            boxes = self.light_switch_detection.predict_light_switches(color_response[0], vis_block=True)
+            logger.info("INITIAL LIGHT SWITCH DETECTION")
+            logger.info("Number of detected switches: %d", len(boxes))
             end_time_detection = time.time()
 
             poses = calculate_light_switch_poses(boxes, depth_image_response, robot_state.frame_name, frame_transformer)
-            logger.info(f"Number of calculated poses: {len(poses)}")
+            logger.info("Number of calculated poses: %d", len(poses))
             end_time_pose_calculation = time.time()
-            logger.info(f"Pose calculation time: {end_time_pose_calculation - end_time_detection}")
+            logger.info("Pose calculation time: %.2f", end_time_pose_calculation - end_time_detection)
             light_switch_pose = poses[0]
             
             #################################
@@ -130,7 +136,7 @@ class ItemInteractionsPlugin:
             # affordance detection
             #################################
             logger.info("affordance detection starting...")
-            affordance_dict = light_switch_detection.light_switch_affordance_detection(
+            affordance_dict = self.light_switch_detection.light_switch_affordance_detection(
                 refined_box, color_response, 
                 config["AFFORDANCE_DICT_LIGHT_SWITCHES"], planner_settings.get("OPENAI_API_KEY")
             )
@@ -246,22 +252,93 @@ class ItemInteractionsPlugin:
         return None
 
     # @kernel_function(description="function to call to pick up a certain object", name="pick_up_object")
-    # async def pick_up_object(self, object_node: ObjectNode) -> None:
-    #     pass
+    # async def pick_up_object(self, object_id: Annotated[int, "The ID of the object to pick up"]) -> None:
+        
+    #     object_node = robot_state.scene_graph.nodes[object_id]
+    #     object_coordinates = Pose3D(object_node.centroid)
+    #     sem_label = robot_state.scene_graph.label_mapping.get(object_node.sem_label, "object")
+        
+    #     mask_path = general_config.get_subpath("prescans")
+    #     ending = general_config["pre_scanned_graphs"]["high_res"]
+    #     mask_path = os.path.join(mask_path, ending)
 
-    # @kernel_function(description="function to call to place a certain object", name="place_object")
-    # async def place_object(self, object_node: ObjectNode) -> None:
-    #     pass
+    #     pc_path = general_config.get_subpath("aligned_point_clouds")
+    #     ending = general_config["pre_scanned_graphs"]["high_res"]
+    #     pc_path = os.path.join(str(pc_path), ending, "scene.ply")
 
-    # @kernel_function(description="function to call to open a certain drawer present in the scene graph", name="open_drawer")
-    # async def open_drawer(self, drawer_node: DrawerNode) -> None:
-    #     pass
+    #     instance_index = 0 
+    #     item_cloud, environment_cloud = get_coordinates_from_item(
+    #         sem_label, mask_path, pc_path, instance_index
+    #     )
+    #     lim_env_cloud = get_radius_env_cloud(item_cloud, environment_cloud, 0.5)
 
-    # @kernel_function(description="function to call to close a certain drawer present in the scene graph", name="close_drawer")
-    # async def close_drawer(self, drawer_node: DrawerNode) -> None:
-    #     pass
+    #     logger.info("Starting body planning.")
+    #     robot_target = body_planning(
+    #         environment_cloud, object_coordinates, min_distance=0.65, max_distance=0.65
+    #     )[0]
 
-    # @kernel_function(description="function to call to turn a certain light switch present in the scene graph", name="turn_light_switch")
-    # async def turn_light_switch(self, light_switch_node: LightSwitchNode) -> None:
-    #     pass
+    #     logger.info("Starting graspnet request.")
+    #     tf_matrix, _ = graspnet_interface.predict_full_grasp(
+    #         item_cloud,
+    #         lim_env_cloud,
+    #         general_config,
+    #         logger,
+    #         rotation_resolution=16,
+    #         top_n=2,
+    #         vis_block=False,
+    #     )
+
+    #     direction = object_coordinates.coordinates - robot_target.coordinates
+    #     robot_target.set_rot_from_direction(direction)
+
+    #     move_body(
+    #         robot_target.to_dimension(2),
+    #         robot_state.frame_name,
+    #     )
+
+    #     ###############################################################################
+    #     ################################ ARM COMMANDS #################################
+    #     ###############################################################################
+
+    #     grasp_pose = Pose3D.from_matrix(tf_matrix)
+    #     carry_arm(True)
+    #     # unstow_arm(robot, robot_command_client, True)
+
+    #     # correct tf_matrix, we need to rotate by 90 degrees
+    #     correct_roll_matrix = Rotation.from_euler(
+    #         "xyz", (-90, 0, 0), degrees=True
+    #     ).as_matrix()
+    #     roll = Pose3D(rot_matrix=correct_roll_matrix)
+    #     grasp_pose = grasp_pose @ roll
+
+    #     positional_grab(
+    #         grasp_pose,
+    #         0.1,
+    #         -0.05,
+    #         robot_state.frame_name,
+    #         already_gripping=False,
+    #     )
+
+    #     carry_arm()
+        
+        
+    @kernel_function(description="function to call to grasp a certain object", name="grasp_object")
+    async def grasp_object(self, object_node: ObjectNode) -> None:
+        pass
+
+    @kernel_function(description="function to call to place a certain object", name="place_object")
+    async def place_object(self, object_node: ObjectNode) -> None:
+        pass
+
+    @kernel_function(description="function to call to open a certain drawer present in the scene graph", name="open_drawer")
+    async def open_drawer(self, drawer_node: DrawerNode) -> None:
+        pass
+
+    @kernel_function(description="function to call to close a certain drawer present in the scene graph", name="close_drawer")
+    async def close_drawer(self, drawer_node: DrawerNode) -> None:
+        pass
+
+    @kernel_function(description="function to call to turn a certain light switch present in the scene graph", name="turn_light_switch")
+    async def turn_light_switch(self, light_switch_node: LightSwitchNode) -> None:
+        pass
 

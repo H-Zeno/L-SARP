@@ -41,7 +41,9 @@ from configs.agent_instruction_prompts import (
     TASK_PLANNER_AGENT_INSTRUCTIONS,
     CREATE_TASK_PLANNER_PROMPT_TEMPLATE,
     UPDATE_TASK_PLANNER_PROMPT_TEMPLATE,
+    CHECK_IF_GOAL_IS_COMPLETED_PROMPT_TEMPLATE,
 )
+
 # from configs.plugin_configs import plugin_configs
 from configs.scenes_and_plugins_config import Scene
 from planner_core.robot_state import RobotStateSingleton
@@ -111,15 +113,16 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
         
         return kernel
 
-    def _add_planning_plugins(self, kernel: Kernel) -> Kernel:
+    def _add_task_planner_communication_plugins(self, kernel: Kernel) -> Kernel:
         """
-        Adds all the planning plugins to the kernel
+        Adds all the task planner communication plugins to the kernel
         """
         # Register the task planning methods from this class as a plugin
-        kernel.add_plugin(self, plugin_name="task_planner")
+        kernel.add_plugin(self, plugin_name="task_planner_communication")
+
         return kernel
     
-    def _create_kernel(self, action_plugins=False, retrieval_plugins=False, planning_plugins=False) -> Kernel:
+    def _create_kernel(self, action_plugins=False, retrieval_plugins=False, task_planner_communication=False) -> Kernel:
         """Create and configure a kernel with all the AI services that we support."""
         logger.info(f"Creating kernel with service ID: {self.service_id}")
         kernel = Kernel()
@@ -173,8 +176,8 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
         if retrieval_plugins:
             kernel = self._add_retrieval_plugins(kernel)
             
-        if planning_plugins:
-            kernel = self._add_planning_plugins(kernel)
+        if task_planner_communication:
+            kernel = self._add_task_planner_communication_plugins(kernel)
             
         return kernel
     
@@ -228,18 +231,6 @@ class TaskPlannerAgent(RobotAgentBase):
             description="Select me to plan sequential tasks that the robot should perform to complete the goal."
         )
 
-    # @override
-    # async def invoke(
-    #     self,
-    #     history: ChatHistory,
-    #     arguments: KernelArguments | None = None,
-    #     kernel: "Kernel | None" = None,
-    #     **kwargs: Any,
-    # ) -> AsyncIterable[ChatMessageContent]:
-        
-    #     async for response_message in super().invoke(history, arguments=arguments, kernel=kernel, **kwargs):
-    #         yield response_message
-
 
 class TaskExecutionAgent(RobotAgentBase):
     """Agent responsible for executing tasks."""
@@ -259,39 +250,28 @@ class TaskExecutionAgent(RobotAgentBase):
             description="Select me to execute tasks that are generated/planned by the TaskPlannerAgent."
         )
 
-    # @override
-    # async def invoke(
-    #     self,
-    #     history: ChatHistory,
-    #     arguments: Union[KernelArguments, None] = None,
-    #     kernel: Union["Kernel", None] = None,
-    #     **kwargs: Any,
-    # ) -> AsyncIterable[ChatMessageContent]:
-    #     async for response_message in super().invoke(history, arguments=arguments, kernel=kernel, **kwargs):
-    #         yield response_message
 
-
-# class GoalCompletionCheckerAgent(RobotAgentBase):
-#     """Agent responsible for checking if goals have been completed."""
+class GoalCompletionCheckerAgent(RobotAgentBase):
+    """Agent responsible for checking if goals have been completed."""
+    service_id = "gpt4o"
     
-#     def __init__(self):
-#         super().__init__(
-#             name="GoalCompletionCheckerAgent",
-#             instructions=GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
-#             service_id="gpt4o",
-#             function_choice_behavior=FunctionChoiceBehavior.Auto()
-#         )
+    def __init__(self):
+        kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, planning_plugins=True)
+        
+        settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
+        settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
+        
+        super().__init__(
+            kernel=kernel,
+            instructions=GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS.format(termination_keyword=config.get("robot_planner_settings", {}).get("termination_keyword", "COMPLETED")),
+            arguments=KernelArguments(settings=settings),
+            name="GoalCompletionCheckerAgent",
+            description="Select me to check if goals have been completed."
+        )
 
-#     @override
-#     async def invoke(
-#         self,
-#         history: ChatHistory,
-#         arguments: KernelArguments | None = None,
-#         kernel: "Kernel | None" = None,
-#         **kwargs: Any,
-#     ) -> AsyncIterable[ChatMessageContent]:
-#         async for response_message in super().invoke(history, arguments=arguments, kernel=kernel, **kwargs):
-#             yield response_message
+# Cool: it would be nice to test how a group chat vs. responsibility handover mechanism would perform against each other.
+# 1. Predefined logic deterines who can now decide/speak
+# 2. An agent can decide who to give the responsibility at the moment (group chat), might be more flexible, but might gave worse performance (we don't know)
 
 
 class ApprovalTerminationStrategy(TerminationStrategy):
@@ -317,10 +297,11 @@ class RobotPlanner:
         # Initialize agents
         self.task_planner_agent = TaskPlannerAgent()
         self.task_execution_agent = TaskExecutionAgent()
-        # self.goal_completion_checker_agent = GoalCompletionCheckerAgent()
+        self.goal_completion_checker_agent = GoalCompletionCheckerAgent()
 
         # Planner states
         self.goal = None
+        self.goal_completed = False
         self.plan = None
         self.replanned = False
         self.planning_chat_history = ChatHistory()
@@ -396,12 +377,26 @@ class RobotPlanner:
         self.json_format_agent_thread = None # Reset the chat history
         return chain_of_thought
 
+    async def create_task_plan_from_goal(self, goal: Annotated[str, "The goal to be achieved by the robot"]) -> Tuple[Dict, str]:
+        """
+        Sets the goal for the robot planner and creates an initial task plan.
+        """
+        self.goal = goal
+        self.plan = None
+        self.replanned = False
+        self.planning_chat_history = ChatHistory()
+        self.tasks_completed = []
+        
+        # Create initial plan
+        chain_of_thought = await self._create_task_plan()
+        
+        logger.info(f"Goal set to: {self.goal}. Initial plan created.")
+
+        return self.plan, chain_of_thought
 
     @kernel_function(description="Function to call when something happens that doesn't follow the initial plan generated by the task planning agent.")
-    async def update_task_plan(self, issue_description: Annotated[str, "Detailed description of the current explanation and what went different to the original plan"]) -> None:
+    async def update_task_plan(self, issue_description: Annotated[str, "A detailed description of the current situation and what went different to the original plan."]) -> None:
         """Update the task plan based on issues encountered during execution."""
-        # if self.json_format_agent_thread == None:
-        #     self.json_format_agent_thread = ChatHistory()
             
         self.replanned = True
         
@@ -462,22 +457,35 @@ class RobotPlanner:
         
         return chain_of_thought
 
-    async def create_task_plan_from_goal(self, goal: Annotated[str, "The goal to be achieved by the robot"]) -> Tuple[Dict, str]:
-        """
-        Sets the goal for the robot planner and creates an initial task plan.
-        """
-        self.goal = goal
-        self.plan = None
-        self.replanned = False
-        self.planning_chat_history = ChatHistory()
-        self.tasks_completed = []
+    @kernel_function(description="Function to call when you (the task execution agent) think that by completing the current task, you have actually completed the overall goal.")
+    async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why you think the goal is completed."]) -> None:
+        """Check if the goal is completed."""
         
-        # Create initial plan
-        chain_of_thought = await self._create_task_plan()
+        #
+        agent = self.kernel
         
-        logger.info(f"Goal set to: {self.goal}. Initial plan created.")
+        
+        check_if_goal_is_completed_prompt = CHECK_IF_GOAL_IS_COMPLETED_PROMPT_TEMPLATE.format(
+            task=self.task,
+            goal=self.goal,
+            explanation=explanation,
+            termination_keyword=config.get("robot_planner_settings", {}).get("termination_keyword", "COMPLETED"),
+            plan=self.plan
+        )
+        
+        thread = ChatHistoryAgentThread()
 
-        return self.plan, chain_of_thought
+        response, thread = await invoke_agent(
+            agent=self.goal_completion_checker_agent,
+            thread=thread,
+            input_text_message=check_if_goal_is_completed_prompt,
+            input_image_message=robot_state.get_current_image_content()
+        )
+        
+        if "COMPLETED" in response.lower():
+            self.goal_completed = True
+            logger.info("Goal completion flag set to True")
+
 
 
 class RobotPlannerSingleton(_SingletonWrapper):
