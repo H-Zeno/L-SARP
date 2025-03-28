@@ -10,28 +10,37 @@ note: 'Language-based Scene Aware Robot Planner'
 
 path_to_data: 'data/'
 
-
 robot_planner_settings:
   use_with_robot: false
-  termination_keyword: 'GOAL_COMPLETED'
+  termination_keyword: 'goal completed' # has to be lowercase
   active_scene: 'SEMANTIC_CORNER_WITH_BED' # needs to be in all caps, see misc/scenes_and_plugins_config.py
   task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"
   path_to_scene_data: 'data_scene/' # relative path to project_root_dir
   debug: true
 
-
 robot_parameters:
   verbose: False
   H_FOV: 82
   V_FOV: 140
-  
 
 # device on which to train
 device: 'cuda'
 
 # Semantic label categories for scene understanding
 semantic_labels:
-  furniture: ["shelf", "cabinet", "coffee table", "tv stand", "table", "desk", "dresser", "bookshelf", "nightstand", "end table"]
+  furniture:
+    [
+      'shelf',
+      'cabinet',
+      'coffee table',
+      'tv stand',
+      'table',
+      'desk',
+      'dresser',
+      'bookshelf',
+      'nightstand',
+      'end table',
+    ]
 
 pre_scanned_graphs:
   base_fiducial_id: 52

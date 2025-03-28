@@ -23,14 +23,18 @@ from robot_utils.frame_transformer import FrameTransformerSingleton
 
 from planner_core.robot_planner import RobotPlanner, RobotPlannerSingleton
 from planner_core.robot_state import RobotState, RobotStateSingleton
+from planner_core.agents import TaskPlannerAgent, TaskExecutionAgent, GoalCompletionCheckerAgent
 from LostFound.src.scene_graph import get_scene_graph
 
+from robot_plugins.replanning import ReplanningPlugin
+from robot_plugins.goal_checker import TaskPlannerGoalChecker
 # Local imports
 from configs.scenes_and_plugins_config import Scene
 from utils.agent_utils import invoke_agent
 from utils.recursive_config import Config
 from utils.singletons import RobotLeaseClientSingleton
 from utils.logging_utils import setup_logging
+
 
 
 # Initialize singletons
@@ -135,7 +139,8 @@ async def main():
             spot_initial_localization()
 
         # Initialize the robot state with the scene graph
-        robot_planner.set_instance(RobotPlanner(scene=active_scene))
+        robot_planner.set_instance(RobotPlanner(task_planner_agent=TaskPlannerAgent(), task_execution_agent=TaskExecutionAgent(), goal_completion_checker_agent=GoalCompletionCheckerAgent(), scene=active_scene))
+        
         robot_state.set_instance(RobotState(scene_graph_object=scene_graph))
 
         ### Online Live Instruction ###
@@ -222,10 +227,7 @@ async def main():
                 execution_thread = None
                 
                 while True:
-                    if robot_planner.goal_completed:
-                        logger.info("Goal completed successfully!")
-                        break
-
+                
                     for task in robot_planner.plan["tasks"]:
                         robot_planner.task = task
                         logger.info("%s\nExecuting task: %s\n%s", separator, task, separator)
@@ -258,6 +260,15 @@ async def main():
                             break
 
                         robot_planner.tasks_completed.append(task)
+                    
+                    # Check if the goal is completed
+                    await TaskPlannerGoalChecker().check_if_goal_is_completed(explanation="All planned tasks seem to have been completed.")
+                    
+                    if robot_planner.goal_completed:
+                        logger.info("Goal completed successfully!")
+                        break
+                    else:
+                        await ReplanningPlugin().update_task_plan("The goal is not completed yet. Please replan.")
 
 
             logger.info("Finished processing Offline Predefined Goals")

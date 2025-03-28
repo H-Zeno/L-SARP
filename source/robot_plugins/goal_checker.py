@@ -1,0 +1,129 @@
+import logging
+from typing import Annotated, Dict, Tuple, List
+
+from semantic_kernel.agents import ChatHistoryAgentThread
+from semantic_kernel.functions.kernel_function_decorator import kernel_function
+from semantic_kernel.contents.utils.author_role import AuthorRole
+
+from configs.agent_instruction_prompts import (
+    TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE,
+    TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE,
+    TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE
+)
+from planner_core.robot_planner import RobotPlannerSingleton
+from planner_core.robot_state import RobotStateSingleton
+from robot_utils.frame_transformer import FrameTransformerSingleton
+from utils.agent_utils import invoke_agent
+from utils.recursive_config import Config
+
+# Get singleton instances
+robot_state = RobotStateSingleton()
+robot_planner = RobotPlannerSingleton()
+frame_transformer = FrameTransformerSingleton()
+
+# Set up config
+config = Config()
+use_robot = config.get("robot_planner_settings", {}).get("use_with_robot", False)
+
+# Set up logger
+logger = logging.getLogger("plugins")
+
+termination_keyword = config.get("robot_planner_settings", {}).get("termination_keyword", "COMPLETED")
+
+class TaskExecutionGoalChecker:
+    """This plugin should only be called when the task execution agent thinks that the goal is completed."""
+    
+    @kernel_function(description="Function to call when you (the task execution agent) think that by completing the current task, you have actually completed the overall goal.")
+    async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why you think the goal is completed."]) -> None:
+        """Check if the goal is completed."""
+        
+        
+        check_if_goal_is_completed_prompt = TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
+            task=robot_planner.task,
+            goal=robot_planner.goal,
+            explanation=explanation,
+            plan=robot_planner.plan,
+            tasks_completed=robot_planner.tasks_completed
+        )
+        
+        planning_thread = ChatHistoryAgentThread(chat_history=robot_planner.planning_chat_history)
+
+        response, planning_thread = await invoke_agent(
+            agent=robot_planner.goal_completion_checker_agent,
+            thread=planning_thread,
+            input_text_message=check_if_goal_is_completed_prompt,
+            input_image_message=robot_state.get_current_image_content()
+        )
+        
+        logger.info("Task execution goal checker response: %s", response)
+        
+        # We save the goal check in the planning chat history
+        robot_planner.planning_chat_history.add_message({
+            "role": AuthorRole.USER,
+            "content": check_if_goal_is_completed_prompt
+        })
+        robot_planner.planning_chat_history.add_message({
+            "role": AuthorRole.ASSISTANT,
+            "content": str(response)
+        })
+        
+        # We save the goal check in the task execution chat history
+        robot_planner.task_execution_chat_history.add_message({
+            "role": AuthorRole.USER,
+            "content": check_if_goal_is_completed_prompt
+        })
+        robot_planner.task_execution_chat_history.add_message({
+            "role": AuthorRole.ASSISTANT,
+            "content": str(response)
+        })
+        
+        
+        if termination_keyword.lower() in str(response).lower():
+            robot_planner.goal_completed = True
+            logger.info("Goal completion flag set to True")
+            
+        return None
+
+class TaskPlannerGoalChecker:
+    """This plugin should only be called when the task planner thinks that the goal is completed."""
+    
+    @kernel_function(description="Function to call when the task planner thinks that the goal is completed.")
+    async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why the task planner thinks the goal is completed."]) -> None:
+        """Check if the goal is completed."""
+        
+        check_if_goal_is_completed_prompt = TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
+        goal=robot_planner.goal,
+        plan=robot_planner.plan,
+        tasks_completed=robot_planner.tasks_completed,
+        explanation=explanation,
+        scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
+        robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+    )
+        
+        planning_thread = ChatHistoryAgentThread(chat_history=robot_planner.planning_chat_history)
+
+        response, _ = await invoke_agent(
+            agent=robot_planner.goal_completion_checker_agent,
+            thread=planning_thread,
+            input_text_message=check_if_goal_is_completed_prompt,
+            input_image_message=robot_state.get_current_image_content()
+        )
+        
+        logger.info("Task planner goal completion checker response: %s", response)
+        
+        # We save the goal check in the planning chat history
+        robot_planner.planning_chat_history.add_message({
+            "role": AuthorRole.USER,
+            "content": check_if_goal_is_completed_prompt
+        })
+        robot_planner.planning_chat_history.add_message({
+            "role": AuthorRole.ASSISTANT,
+            "content": str(response)
+        })
+        
+        if termination_keyword.lower() in str(response).lower():
+            robot_planner.goal_completed = True
+            logger.info("Goal completion flag set to True")
+            
+        return None
+

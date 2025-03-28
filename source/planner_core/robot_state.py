@@ -40,6 +40,7 @@ from utils.singletons import (
     WorldObjectClientSingleton,
 )
 
+# Initialize singleton instances
 graph_nav_client = GraphNavClientSingleton()
 image_client = ImageClientSingleton()
 robot_command_client = RobotCommandClientSingleton()

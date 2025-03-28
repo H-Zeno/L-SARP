@@ -132,32 +132,6 @@ class InspectionPlugin:
                 return False
 
 
-    # class _Calculate_LightSwitch_Poses(ControlFunction):
-    #     def __call__(
-    #         self,
-    #         *args,
-    #         **kwargs,
-    #     ) -> List[Pose3D]:
-
-    #         #################################
-    #         # Detect the light switch bounding boxes and poses in the scene
-    #         #################################
-    #         boxes = light_switch_detection.predict_light_switches(robot_state.image_state, vis_block=True)
-    #         logging.info(f"INITIAL LIGHT SWITCH DETECTION")
-    #         logging.info(f"Number of detected switches: {len(boxes)}")
-
-    #         poses = calculate_light_switch_poses(boxes, robot_state.depth_image_state, robot_state.frame_name, frame_transformer)
-    #         logging.info(f"Number of calculated poses: {len(poses)}")
-
-    #         #################################
-    #         # Add the light switches to the scene graph (not fully implemented)
-    #         #################################
-    #         for pose in poses:
-    #             light_switch_node = LightSwitchNode(pose)
-    #             robot_state.scene_graph.add_node(light_switch_node)
-
-    #         return poses
-
     @kernel_function(description="After having navigated to an object/furniture, you can call this function to inspect the object with gaze and save the image to your memory.")
     async def inspect_object_with_gaze(self, object_id: Annotated[int, "ID of the object in the scene graph"]) -> None:
         

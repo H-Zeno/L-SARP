@@ -191,6 +191,7 @@ class ItemInteractionsPlugin:
         
         if general_config["robot_planner_settings"]["use_with_robot"] is not True:
             logger.info("Pushed light switch in simulation (without robot).")
+            # Add a way in the scene graph to confirm that the light switch has been pushed (or other things changed)
             return None
 
         # Get object information from the scene graph
