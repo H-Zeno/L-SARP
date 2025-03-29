@@ -180,7 +180,6 @@ class RobotPlanner:
         # self.task = None
         # self.actions_taken = []
     
-    
         
         # Create initial plan for the new goal
         chain_of_thought = await self._create_task_plan()
