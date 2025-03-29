@@ -17,7 +17,6 @@ from semantic_kernel import Kernel
 from semantic_kernel.agents import ChatCompletionAgent
 from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
-from semantic_kernel.contents import ChatHistory, ChatMessageContent
 from semantic_kernel.functions import KernelArguments
 
 # Local imports
@@ -86,7 +85,7 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
         if self.service_id == "gpt4o":
             # General Multimodal Intelligence model (GPT4o)
             kernel.add_service(OpenAIChatCompletion(
-                service_id=self.service_id,
+                service_id="gpt4o",
                 api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
                 ai_model_id="gpt-4o-2024-11-20"
             ))

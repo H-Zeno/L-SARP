@@ -61,6 +61,7 @@ logger = logging.getLogger("plugins")
 general_config = Config()
 object_interaction_config = Config("object_interaction_configs")
 planner_settings = dotenv_values(".env_core_planner")
+use_robot = general_config["robot_planner_settings"]["use_with_robot"]
 
 class ItemInteractionsPlugin:
     
@@ -189,9 +190,12 @@ class ItemInteractionsPlugin:
     async def push_light_switch(self, light_switch_object_id: Annotated[int, "The ID of the light switch object"], 
                                 object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
         
-        if general_config["robot_planner_settings"]["use_with_robot"] is not True:
+        if not use_robot:
             logger.info("Pushed light switch in simulation (without robot).")
             # Add a way in the scene graph to confirm that the light switch has been pushed (or other things changed)
+            light_switch_node = robot_state.scene_graph.nodes[light_switch_object_id]
+            light_switch_node.interactions_with_object.append("pressed") # Log interaction
+            logger.info(f"Light switch interaction logged in the scene graph.")
             return None
 
         # Get object information from the scene graph
@@ -199,7 +203,7 @@ class ItemInteractionsPlugin:
         light_switch_centroid = light_switch_node.centroid
         sem_label = robot_state.scene_graph.label_mapping.get(light_switch_node.sem_label, "light switch")
         
-        logger.info(f"Light switch with ID {light_switch_object_id} has label {sem_label} and is at position {light_switch_centroid}")
+        logger.info(f"Light switch with ID {light_switch_object_id} hfas label {sem_label} and is at position {light_switch_centroid}")
         
         # # Check if the light switch is closer than the light switch interaction distance
         # distance_to_light_switch = np.linalg.norm(light_switch_centroid - frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
@@ -245,6 +249,7 @@ class ItemInteractionsPlugin:
                 light_switch_object_id=light_switch_object_id
             )
             logger.info(f"Light switch with ID {light_switch_object_id} pushed successfully")
+            light_switch_node.interactions_with_object.append("pressed") # Log interaction
             await communication.inform_user("Light switch interaction completed.")
 
         else:
@@ -324,22 +329,64 @@ class ItemInteractionsPlugin:
         
         
     @kernel_function(description="function to call to grasp a certain object", name="grasp_object")
-    async def grasp_object(self, object_node: ObjectNode) -> None:
+    async def grasp_object(self, object_id: Annotated[int, "The ID of the object to grasp"]) -> None:
+        if not use_robot:
+            logger.info(f"Grasped object with ID {object_id} in simulation (without robot).")
+            object_node = robot_state.scene_graph.nodes[object_id]
+            object_node.interactions_with_object.append("grasped object") # Log interaction
+            logger.info(f"Object interaction logged in the scene graph.")
+            return None
+        
+        # TODO: Implement actual robot logic for grasping
         pass
 
     @kernel_function(description="function to call to place a certain object", name="place_object")
-    async def place_object(self, object_node: ObjectNode) -> None:
+    async def place_object(self, object_id: Annotated[int, "The ID of the object to place"]) -> None:
+        if not use_robot:
+            logger.info(f"Placed object with ID {object_id} in simulation (without robot).")
+            object_node = robot_state.scene_graph.nodes[object_id]
+            object_node.interactions_with_object.append("placed object") # Log interaction
+            logger.info(f"Object interaction logged in the scene graph.")
+            return None
+        
+        # TODO: Implement actual robot logic for placing
         pass
 
     @kernel_function(description="function to call to open a certain drawer present in the scene graph", name="open_drawer")
-    async def open_drawer(self, drawer_node: DrawerNode) -> None:
+    async def open_drawer(self, drawer_id: Annotated[int, "The ID of the drawer to open"]) -> None:
+        if not use_robot:
+            logger.info(f"Opened drawer with ID {drawer_id} in simulation (without robot).")
+            drawer_node = robot_state.scene_graph.nodes[drawer_id]
+            drawer_node.interactions_with_object.append("opened") # Log interaction
+            # Potentially add drawer_node.is_open = True ?
+            logger.info(f"Drawer interaction logged in the scene graph.")
+            return None
+
+        # TODO: Implement actual robot logic for opening drawer
         pass
 
     @kernel_function(description="function to call to close a certain drawer present in the scene graph", name="close_drawer")
-    async def close_drawer(self, drawer_node: DrawerNode) -> None:
+    async def close_drawer(self, drawer_id: Annotated[int, "The ID of the drawer to close"]) -> None:
+        if not use_robot:
+            logger.info(f"Closed drawer with ID {drawer_id} in simulation (without robot).")
+            drawer_node = robot_state.scene_graph.nodes[drawer_id]
+            drawer_node.interactions_with_object.append("closed") # Log interaction
+            # Potentially add drawer_node.is_open = False ?
+            logger.info(f"Drawer interaction logged in the scene graph.")
+            return None
+            
+        # TODO: Implement actual robot logic for closing drawer
         pass
+    
+    @kernel_function(description="function to call to use a certain object", name="use_object")
+    async def use_object(self, object_id: Annotated[int, "The ID of the object to use"], description_of_use: Annotated[str, "A clear (3-5 words) description on how to use the object"]) -> None:
+        if not use_robot:
+            logger.info(f"Used object with ID {object_id} ({description_of_use}) in simulation (without robot).")
+            object_node = robot_state.scene_graph.nodes[object_id]
+            object_node.interactions_with_object.append(description_of_use)
+            logger.info(f"Object interaction logged in the scene graph.")
+            return None
 
-    @kernel_function(description="function to call to turn a certain light switch present in the scene graph", name="turn_light_switch")
-    async def turn_light_switch(self, light_switch_node: LightSwitchNode) -> None:
+        # TODO: Implement actual robot logic for using object
         pass
 

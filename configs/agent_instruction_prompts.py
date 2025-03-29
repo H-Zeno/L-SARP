@@ -144,7 +144,13 @@ TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE = """
             The task that I just executed is part of the following plan that was executed by the task planner agent: {plan}
 
             These are the tasks that have been completed so far: {tasks_completed}
+            
+            Here is the scene graph:
+            {scene_graph}
 
+            Here is the robot's current position:
+            {robot_position}
+            
             Please check if you agree with my reasoning and if the goal is indeed completed.
             """
 
@@ -163,7 +169,7 @@ TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE = """
 
             Here is the robot's current position: {robot_position}
 
-            Please check if you agree and if the goal is indeed completed.
+            Please check if you agree with my reasoning and if the goal is indeed completed.
             """
 
 

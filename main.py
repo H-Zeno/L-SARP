@@ -11,7 +11,11 @@ from dotenv import dotenv_values
 from bosdyn import client as bosdyn_client
 from semantic_kernel.contents.chat_history import ChatHistory
 from semantic_kernel.agents import ChatHistoryAgentThread
-from semantic_kernel.functions.kernel_arguments import KernelArguments
+from semantic_kernel.contents.utils.author_role import AuthorRole
+from semantic_kernel.contents import (
+    ChatHistorySummarizationReducer,
+)
+from semantic_kernel.exceptions.agent_exceptions import AgentThreadOperationException
 
 from robot_utils.base_LSARP import (
     initialize_robot_connection,
@@ -24,6 +28,7 @@ from robot_utils.frame_transformer import FrameTransformerSingleton
 from planner_core.robot_planner import RobotPlanner, RobotPlannerSingleton
 from planner_core.robot_state import RobotState, RobotStateSingleton
 from planner_core.agents import TaskPlannerAgent, TaskExecutionAgent, GoalCompletionCheckerAgent
+
 from LostFound.src.scene_graph import get_scene_graph
 
 from robot_plugins.replanning import ReplanningPlugin
@@ -66,6 +71,41 @@ logger = logging.getLogger("main")
 debug = config.get("robot_planner_settings", {}).get("debug", True)
 if debug:
     logger.setLevel(logging.DEBUG)
+
+# async def reduce_and_log_chat_history(chat_thread, thread_name):
+#     """Helper function to reduce chat history and log the results."""
+#     try:
+#         initial_messages = await chat_thread.get_messages()
+#         initial_count = len(initial_messages.messages)
+#         logger.info(f"@ {thread_name} History count BEFORE reduction attempt: {initial_count}") # Log count before
+
+#         is_reduced = await chat_thread.reduce()
+#         chat_history = await chat_thread.get_messages()
+#         final_count = len(chat_history.messages) # Get final count
+
+#         if is_reduced:
+#             # Use initial_count and final_count in the log message
+#             logger.info(f"@ {thread_name} History reduced from {initial_count} to {final_count} messages.")
+#             for msg in chat_history.messages:
+#                 if msg.metadata and msg.metadata.get("__summary__"):
+#                     logger.info(f"\t{thread_name} Summary: {msg.content}")
+#                     break # Assuming only one summary message needs logging
+#         else:
+#              # Log that history wasn't reduced and the count remains final_count
+#              logger.info(f"@ {thread_name} History not reduced. Count remains: {final_count}")
+
+#         # Log final count using the variable
+#         logger.info(f"@ {thread_name} Final Message Count: {final_count}\n") 
+#     except AgentThreadOperationException:
+#         logger.warning(f"Could not reduce chat history for {thread_name} as the thread is not active.")
+#         # Optionally, still log the current message count if the thread object allows access
+#         try:
+#             chat_history = await chat_thread.get_messages()
+#             # Use final_count variable here too if needed, or recalculate
+#             final_count_except = len(chat_history.messages)
+#             logger.info(f"@ {thread_name} Final Message Count (reduction skipped): {final_count_except}\n")
+#         except Exception as e:
+#             logger.warning(f"Could not retrieve messages for {thread_name} after failed reduction: {e}")
 
 async def main():
     """Main entry point for the robot control system.
@@ -223,14 +263,12 @@ async def main():
                 with open(plan_gen_save_path, 'w') as file:
                     file.write(new_data)
 
-                # Main Agentic Loop - Execute the plan
-                execution_thread = None
-                
                 while True:
-                
-                    for task in robot_planner.plan["tasks"]:
+                    planned_tasks = robot_planner.plan["tasks"]
+                    for task in planned_tasks:
                         robot_planner.task = task
                         logger.info("%s\nExecuting task: %s\n%s", separator, task, separator)
+                        
                         if use_robot:
                             logger.info("Current robot frame: %s", robot_state.frame_name)
 
@@ -244,22 +282,25 @@ async def main():
                         )
                         
                         # Execute the task using thread-based approach for better context management
-                        task_completion_response, execution_thread = await invoke_agent(
+                        task_completion_response, robot_planner.task_execution_chat_thread = await invoke_agent(
                             agent=robot_planner.task_execution_agent,
-                            thread=execution_thread,
+                            thread=robot_planner.task_execution_chat_thread,
                             input_text_message=task_execution_prompt,
                             input_image_message=robot_state.get_current_image_content()
                         )
-                        
-                        logger.info("Task completion response: %s", task_completion_response)
+
+                        # # Attempt chat history reduction for both threads
+                        # await reduce_and_log_chat_history(robot_planner.task_execution_chat_thread, "Task Execution")
+                        # await reduce_and_log_chat_history(robot_planner.planning_chat_thread, "Planning")
 
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned:
+                            logger.info("The task planner decided to replan. Breaking out of the task execution loop.")
                             robot_planner.replanned = False
                             # When replanned, the task is not completed
                             break
 
-                        robot_planner.tasks_completed.append(task)
+                        robot_planner.tasks_completed.append(task.get("task_description"))
                     
                     # Check if the goal is completed
                     await TaskPlannerGoalChecker().check_if_goal_is_completed(explanation="All planned tasks seem to have been completed.")
@@ -268,10 +309,11 @@ async def main():
                         logger.info("Goal completed successfully!")
                         break
                     else:
+                        logger.info("Goal is not completed yet. Replanning...")
                         await ReplanningPlugin().update_task_plan("The goal is not completed yet. Please replan.")
 
-
             logger.info("Finished processing Offline Predefined Goals")
+            
 
         else:
             raise ValueError(

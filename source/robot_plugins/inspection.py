@@ -54,6 +54,7 @@ logger = logging.getLogger("plugins")
 debug = general_config.get("robot_planner_settings", {}).get("debug", True)
 if debug:
     logger.setLevel(logging.DEBUG)
+use_robot = general_config["robot_planner_settings"]["use_with_robot"]
 
 
 class InspectionPlugin:
@@ -140,8 +141,11 @@ class InspectionPlugin:
             await communication.inform_user(f"Object with ID {object_id} not found in scene graph.")
             return None
 
-        if general_config["robot_planner_settings"]["use_with_robot"] is not True:
+        if not use_robot:
             logger.info(f"Inspected object with id {object_id} in simulation (without robot).")
+            object_node = robot_state.scene_graph.nodes[object_id]
+            object_node.interactions_with_object.append("inspected") # Log interaction
+            logger.info(f"Object inspection logged in the scene graph.")
             return None
 
         centroid_pose = Pose3D(robot_state.scene_graph.nodes[object_id].centroid)
@@ -161,6 +165,9 @@ class InspectionPlugin:
                 object_centroid_pose=centroid_pose
             )
             logger.info(f"Completed inspecting of object with id {object_id} and centroid {centroid_pose} successfully (including saving to robot state).")
+            object_node = robot_state.scene_graph.nodes[object_id]
+            object_node.interactions_with_object.append("inspected") # Log interaction
+            logger.info(f"Object inspection logged in the scene graph.")
         
         else:
             await communication.inform_user("I will not inspect the object.")

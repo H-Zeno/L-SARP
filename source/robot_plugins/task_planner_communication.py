@@ -5,6 +5,7 @@ from typing import Annotated
 
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 from semantic_kernel.agents import ChatHistoryAgentThread
+from semantic_kernel.contents import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from utils.agent_utils import invoke_agent
 from planner_core.robot_state import RobotStateSingleton
@@ -38,35 +39,18 @@ class TaskPlannerCommunicationPlugin:
     async def communicate_with_task_planner(self, request: Annotated[str, "A detailed explanation of the current situation and what you need from the task planner."]) -> Annotated[str, "The response from the task planner."]:
         """Communicate with the task planner."""
         
-        planning_thread = ChatHistoryAgentThread(chat_history=robot_planner.planning_chat_history)
-        
+    
         # In invoking the task planner agent, it is possible that it will invoke a replanning. 
-        response, _ = await invoke_agent(
+        response, robot_planner.planning_chat_thread = await invoke_agent(
             agent=robot_planner.task_planner_agent, 
-            thread=planning_thread,
+            thread=robot_planner.planning_chat_thread,
             input_text_message=request, 
             input_image_message=robot_state.get_current_image_content()
         )
         
-        # Add to the planning chat history
-        robot_planner.planning_chat_history.add_message({
-            "role": AuthorRole.USER,
-            "content": request
-        })
-        robot_planner.planning_chat_history.add_message({
-            "role": AuthorRole.ASSISTANT,
-            "content": str(response)
-        })
-        
         # Add to the task execution chat history
-        robot_planner.task_execution_chat_history.add_message({
-            "role": AuthorRole.USER,
-            "content": request
-        })
-        robot_planner.task_execution_chat_history.add_message({
-            "role": AuthorRole.ASSISTANT,
-            "content": str(response)
-        })
+        await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content=request))
+        await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content=str(response)))
         
         logger.info("========================================")
         logger.info(f"Task planner response to communication request: {response}")

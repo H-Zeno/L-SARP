@@ -5,7 +5,7 @@ from typing import Annotated, Dict, Tuple, List
 
 from langchain.output_parsers import PydanticOutputParser
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
-from semantic_kernel.contents import ChatHistory
+from semantic_kernel.contents import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 
 from configs.agent_instruction_prompts import (
@@ -42,17 +42,20 @@ class ReplanningPlugin:
         
         robot_planner.replanned = True
         
+        planning_chat_history = await robot_planner.planning_chat_thread.get_messages()
+        
         update_plan_prompt = UPDATE_TASK_PLANNER_PROMPT_TEMPLATE.format(
             goal=robot_planner.goal,
             previous_plan=robot_planner.plan,
             issue_description=issue_description, 
             tasks_completed=', '.join(map(str, robot_planner.tasks_completed)), 
-            planning_chat_history=robot_planner.planning_chat_history, 
+            planning_chat_history=planning_chat_history, 
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
             robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
             model_description=model_desc
         )
 
+        # This can technically call again the update task planner plugin (hhmm)
         updated_plan_response, robot_planner.json_format_agent_thread = await invoke_agent(
             agent=robot_planner.task_planner_agent, 
             thread=robot_planner.json_format_agent_thread,
@@ -60,9 +63,9 @@ class ReplanningPlugin:
             input_image_message=robot_state.get_current_image_content()
         )
 
-        logger.info("========================================")
-        logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
-        logger.info("========================================")
+        # logger.info("========================================")
+        # logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
+        # logger.info("========================================")
 
         # Convert ChatMessageContent to string
         updated_plan_response_str = str(updated_plan_response)
@@ -92,14 +95,9 @@ class ReplanningPlugin:
             logger.error(f"Failed to parse JSON from response: {e}")
             await robot_planner.update_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.")
         
-        robot_planner.planning_chat_history.add_message({
-            "role": AuthorRole.USER,
-            "content": "Issue description with previous plan:" + issue_description
-        })
-        robot_planner.planning_chat_history.add_message({
-            "role": AuthorRole.USER,
-            "content": "Updated plan:" + str(robot_planner.plan)
-        })
+        await robot_planner.planning_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content="Issue description with previous plan:" + issue_description))
+        await robot_planner.planning_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content="Updated plan:" + str(robot_planner.plan)))
+        
         logger.info("========================================")
         logger.info(f"Extracted updated plan: {json.dumps(robot_planner.plan, indent=2)}")
         logger.info("========================================")
