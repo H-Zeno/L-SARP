@@ -41,7 +41,6 @@ from utils.singletons import RobotLeaseClientSingleton
 from utils.logging_utils import setup_logging
 
 
-
 # Initialize singletons
 robot_state = RobotStateSingleton()
 robot_planner = RobotPlannerSingleton()
@@ -50,7 +49,6 @@ frame_transformer = FrameTransformerSingleton()
 
 # Set up the configuration
 config = Config()
-
 
 env_variables = dotenv_values(".env_core_planner")
 connection_string = env_variables.get("AZURE_APP_INSIGHTS_CONNECTION_STRING")
@@ -137,14 +135,14 @@ async def main():
     scene_graph_path = Path(path_to_scene_data / active_scene_name / "full_scene_graph.pkl")
     scene_graph_json_path = Path(path_to_scene_data / active_scene_name / "scene_graph.json")
     logger.info("Loading scene graph from %s. This may take a few seconds...", scan_dir)
-    scene_graph = get_scene_graph(
+    origninal_scene_graph = get_scene_graph(
         scan_dir,
         graph_save_path=scene_graph_path,
         drawers=False,
         light_switches=True,
         vis_block=False
     )
-    scene_graph.save_as_json(scene_graph_json_path)
+    origninal_scene_graph.save_as_json(scene_graph_json_path)
 
     # Create timestamp for the responses file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -178,11 +176,6 @@ async def main():
             power_on()
             spot_initial_localization()
 
-        # Initialize the robot state with the scene graph
-        robot_planner.set_instance(RobotPlanner(task_planner_agent=TaskPlannerAgent(), task_execution_agent=TaskExecutionAgent(), goal_completion_checker_agent=GoalCompletionCheckerAgent(), scene=active_scene))
-        
-        robot_state.set_instance(RobotState(scene_graph_object=scene_graph))
-
         ### Online Live Instruction ###
         if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
             initial_prompt = f"""
@@ -212,6 +205,17 @@ async def main():
             
             # Process each goal
             for nr, goal in goals.items():
+                
+                # Initialize a frsh robot planner instance for each goal
+                robot_planner.set_instance(RobotPlanner(
+                    task_planner_agent=TaskPlannerAgent(), 
+                    task_execution_agent=TaskExecutionAgent(), 
+                    goal_completion_checker_agent=GoalCompletionCheckerAgent(), 
+                    scene=active_scene))
+                
+                # Initialize the robot state with the scene graph
+                robot_state.set_instance(RobotState(scene_graph_object=origninal_scene_graph))
+        
                 goal_text = f"{nr}. {goal}"
                 logger.info(separator)
                 logger.info(goal_text)
@@ -277,7 +281,7 @@ async def main():
                             task=task,
                             plan=robot_planner.plan,
                             tasks_completed=robot_planner.tasks_completed,
-                            scene_graph=str(scene_graph.scene_graph_to_dict()),
+                            scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
                             robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
                         )
                         
@@ -301,13 +305,17 @@ async def main():
                             break
 
                         robot_planner.tasks_completed.append(task.get("task_description"))
-                    
+
+                        # Reset the thread for the next task to ensure clean context
+                        robot_planner.task_execution_chat_thread = None
+                        
                     # Check if the goal is completed
                     await TaskPlannerGoalChecker().check_if_goal_is_completed(explanation="All planned tasks seem to have been completed.")
                     
                     if robot_planner.goal_completed:
                         logger.info("Goal completed successfully!")
                         break
+                    
                     else:
                         logger.info("Goal is not completed yet. Replanning...")
                         await ReplanningPlugin().update_task_plan("The goal is not completed yet. Please replan.")

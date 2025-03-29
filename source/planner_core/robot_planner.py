@@ -66,6 +66,33 @@ class RobotPlanner:
         self.tasks_completed = []
         self.actions_taken = []
         
+        # Initialize chat history threads
+        
+        self.json_format_agent_thread = None # Also reset agent used specifically for plan creation format
+        self.planning_chat_thread = ChatHistoryAgentThread()
+        self.task_execution_chat_thread = ChatHistoryAgentThread()
+        
+        # Set up chat history reducer parameters
+        reducer_msg_count = 3
+        reducer_threshold = 3
+        reducer_service = OpenAIChatCompletion(
+            service_id="gpt4o",
+            api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
+            ai_model_id="gpt-4o-2024-05-13"
+        )
+        
+        # # Chat history threads (with separate history reducers)
+        # planning_history_reducer = ChatHistorySummarizationReducer(
+        #     service=reducer_service,
+        #     target_count=reducer_msg_count, 
+        #     threshold_count=reducer_threshold
+        # )
+        
+        # task_execution_history_reducer = ChatHistorySummarizationReducer(
+        #     service=reducer_service,
+        #     target_count=reducer_msg_count,
+        #     threshold_count=reducer_threshold
+        # )
         
     async def _create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> str:
         """Create a task plan based on the current goal and robot state."""
@@ -142,42 +169,18 @@ class RobotPlanner:
         Sets the goal for the robot planner, resets state, clears history, and creates an initial task plan.
         """
         logger.info(f"Setting new goal: {goal}")
-        # Reset planner state for the new goal
-        self.goal = goal
-        self.goal_completed = False
-        self.plan = None
-        self.replanned = False
-        self.tasks_completed = []
-        self.task = None
-        self.actions_taken = []
-        self.json_format_agent_thread = None # Also reset agent used specifically for plan creation format
-        self.planning_chat_thread = ChatHistoryAgentThread()
-        self.task_execution_chat_thread = ChatHistoryAgentThread()
-        
-        # Set up chat history reducer parameters
-        reducer_msg_count = 3
-        reducer_threshold = 3
-        reducer_service = OpenAIChatCompletion(
-            service_id="gpt4o",
-            api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
-            ai_model_id="gpt-4o-2024-05-13"
-        )
-        
-        # # Chat history threads (with separate history reducers)
-        # planning_history_reducer = ChatHistorySummarizationReducer(
-        #     service=reducer_service,
-        #     target_count=reducer_msg_count, 
-        #     threshold_count=reducer_threshold
-        # )
-        
-        # task_execution_history_reducer = ChatHistorySummarizationReducer(
-        #     service=reducer_service,
-        #     target_count=reducer_msg_count,
-        #     threshold_count=reducer_threshold
-        # )
-        
-        
 
+        self.goal = goal
+        
+        ## Reset planner state for the new goal
+        # self.goal_completed = False
+        # self.plan = None
+        # self.replanned = False
+        # self.tasks_completed = []
+        # self.task = None
+        # self.actions_taken = []
+    
+    
         
         # Create initial plan for the new goal
         chain_of_thought = await self._create_task_plan()

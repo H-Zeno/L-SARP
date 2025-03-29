@@ -16,23 +16,41 @@ config = Config()
 logger = logging.getLogger("main")
 
 def _write_content(content: ChatMessageContent) -> None:
-    """Write the content to the console."""
+    """Write the content items to the console."""
     if not content.items:
         logger.debug("#DEBUG (write content): [(empty)] %s : '(no content)'", content.role)
         return
-        
-    last_item = content.items[-1]
-    last_item_type = type(last_item).__name__
-    
-    message_content = ""
-    if isinstance(last_item, FunctionCallContent):
-        message_content = f"tool request = {last_item.function_name}"
-    elif isinstance(last_item, FunctionResultContent):
-        message_content = f"function result = {last_item.result}"
-    else:
-        message_content = str(last_item)
 
-    logger.info("#Content: [%s] %s : '%s'", last_item_type, content.role, message_content)
+    # Iterate through all items in the message content
+    for item in content.items:
+        item_type_name = type(item).__name__
+        message_content = ""
+        log_level = logging.INFO # Default log level
+
+        if isinstance(item, FunctionCallContent):
+            # Log arguments as well for more detail
+            args_str = ", ".join(f"{k}={v}" for k, v in item.arguments.items()) if item.arguments else ""
+            # Include id for potential tracking/matching with results
+            message_content = f"tool_request(id={item.id}) = {item.function_name}({args_str})"
+            log_level = logging.INFO # Function calls are important INFO level
+        elif isinstance(item, FunctionResultContent):
+            # Potentially long results, maybe truncate or summarize later if needed. Log full for now.
+            # Include id for potential tracking/matching with requests
+            message_content = f"function_result(id={item.tool_call_id}) = {item.function_name} -> {item.result}"
+            log_level = logging.INFO # Results are important INFO level
+        elif isinstance(item, TextContent):
+            message_content = str(item.text) # Access the text attribute
+            log_level = logging.INFO # Keep existing text logging at INFO
+        elif isinstance(item, ImageContent):
+            message_content = "[ImageContent received]" # Don't log raw image data
+            log_level = logging.DEBUG # Image content might be verbose for INFO
+        else:
+             # Log other types maybe at debug level?
+             logger.debug("#Content: [%s] %s - (Unhandled item type in logger)", item_type_name, content.role)
+             continue # Skip logging unknown types via the main logger.log call below
+
+        # Log each processed item with its specific type and role
+        logger.log(log_level, "#Content: [%s] %s : '%s'", item_type_name, content.role, message_content)
 
 
 async def invoke_agent(
