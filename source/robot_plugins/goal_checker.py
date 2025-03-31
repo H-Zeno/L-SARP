@@ -39,7 +39,7 @@ class TaskExecutionGoalChecker:
     """This plugin should only be called when the task execution agent thinks that the goal is completed."""
     
     @kernel_function(description="Function to call when you (the task execution agent) think that by completing the current task, you have actually completed the overall goal.")
-    async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why you think the goal is completed."]) -> None:
+    async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why you think the goal is completed."]) -> str:
         """Check if the goal is completed."""
         
         check_if_goal_is_completed_prompt = TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
@@ -56,15 +56,12 @@ class TaskExecutionGoalChecker:
         logger.debug(f"Goal checker prompt (task execution): {check_if_goal_is_completed_prompt}")
         logger.debug("========================================")
 
-        start_time = datetime.now()
-        response, robot_planner.planning_chat_thread = await invoke_agent(
+        response, robot_planner.planning_chat_thread, agent_response_logs = await invoke_agent(
             agent=robot_planner.goal_completion_checker_agent,
             thread=robot_planner.planning_chat_thread,
             input_text_message=check_if_goal_is_completed_prompt,
             input_image_message=robot_state.get_current_image_content()
         )
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
         
         logger.info("Task execution goal checker response: %s", response)
         
@@ -74,26 +71,25 @@ class TaskExecutionGoalChecker:
         
         if termination_keyword.lower() in str(response).lower():
             robot_planner.goal_completed = True
+            response = termination_keyword.lower()
             logger.info("Goal completion flag set to True")
             
         robot_planner.goal_completion_checker_logs.append(
             GoalCompletionCheckerLogs(
                 completion_check_requested_by_agent="TaskExecutionAgent",
                 completion_check_request=explanation,
-                completion_check_response=str(response),
-                completion_check_start_time=start_time,
-                completion_check_end_time=end_time,
-                completion_check_duration_seconds=duration
+                completion_check_agent_invocation=agent_response_logs,
+                completion_check_final_response=str(response)
             )
         )
         
-        return None
+        return str(response)
 
 class TaskPlannerGoalChecker:
     """This plugin should only be called when the task planner thinks that the goal is completed."""
     
     @kernel_function(description="Function to call when the task planner thinks that the goal is completed.")
-    async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why the task planner thinks the goal is completed."]) -> None:
+    async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why the task planner thinks the goal is completed."]) -> str:
         """Check if the goal is completed."""
         
         check_if_goal_is_completed_prompt = TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
@@ -108,32 +104,28 @@ class TaskPlannerGoalChecker:
         logger.debug(f"Goal checker prompt (task planner): {check_if_goal_is_completed_prompt}")
         logger.debug("========================================")
         
-        start_time = datetime.now()
-        response, robot_planner.planning_chat_thread = await invoke_agent(
+        response, robot_planner.planning_chat_thread, agent_response_logs = await invoke_agent(
             agent=robot_planner.goal_completion_checker_agent,
             thread=robot_planner.planning_chat_thread,
             input_text_message=check_if_goal_is_completed_prompt,
             input_image_message=robot_state.get_current_image_content()
         )
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
         
         logger.info("Task planner goal completion checker response: %s", response)
         
         if termination_keyword.lower() in str(response).lower():
             robot_planner.goal_completed = True
+            response = termination_keyword.lower()
             logger.info("Goal completion flag set to True")
         
         robot_planner.goal_completion_checker_logs.append(
             GoalCompletionCheckerLogs(
                 completion_check_requested_by_agent="TaskPlannerAgent",
                 completion_check_request=explanation,
-                completion_check_response=str(response),
-                completion_check_start_time=start_time,
-                completion_check_end_time=end_time,
-                completion_check_duration_seconds=duration
+                completion_check_agent_invocation=agent_response_logs,
+                completion_check_final_response=str(response)
             )
         )
         
-        return None
+        return str(response)
 

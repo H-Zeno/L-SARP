@@ -58,15 +58,16 @@ class ReplanningPlugin:
         )
 
         # This can technically call again the update task planner plugin (hhmm)
-        plan_generation_start_time = datetime.now()
-        updated_plan_response, robot_planner.json_format_agent_thread = await invoke_agent(
+        updated_plan_response, robot_planner.json_format_agent_thread, agent_response_logs = await invoke_agent(
             agent=robot_planner.task_planner_agent, 
             thread=robot_planner.json_format_agent_thread,
             input_text_message=update_plan_prompt, 
             input_image_message=robot_state.get_current_image_content()
         )
-        plan_generation_end_time = datetime.now()
-        plan_generation_duration_seconds = (plan_generation_end_time - plan_generation_start_time).total_seconds()
+        
+        robot_planner.task_planner_invocations.append(agent_response_logs)
+        start_time = agent_response_logs.agent_invocation_start_time
+        end_time = agent_response_logs.agent_invocation_end_time
         
         # logger.info("========================================")
         # logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
@@ -103,11 +104,12 @@ class ReplanningPlugin:
             robot_planner.replanning_count += 1 # log that the replanning took place
             robot_planner.plan_generation_logs.append(
                 PlanGenerationLogs(
+                    plan_id=robot_planner.replanning_count,
                     plan=robot_planner.plan,
-                    plan_generation_start_time=plan_generation_start_time,
-                    plan_generation_end_time=plan_generation_end_time,
-                    plan_generation_duration_seconds=plan_generation_duration_seconds,
-                    plan_generation_reasoning="", # TODO: Add reasoning for the updated plan
+                    plan_generation_start_time=start_time,
+                    plan_generation_end_time=end_time,
+                    plan_generation_duration_seconds=(end_time - start_time).total_seconds(),
+                    issue_description=issue_description,
                     chain_of_thought=chain_of_thought
                 ))
             

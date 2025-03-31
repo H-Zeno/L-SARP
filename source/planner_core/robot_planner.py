@@ -73,7 +73,7 @@ class RobotPlanner:
         self.initial_plan_log = None
         self.plan_generation_logs = []
         self.replanning_count = 0
-        self.planner_tool_calls = []
+        self.task_planner_invocations = []
         
         # Task execution logs   
         self.task_execution_logs = []
@@ -125,18 +125,17 @@ class RobotPlanner:
         logger.info(f"Plan generation prompt: {plan_generation_prompt}")
         logger.info("========================================")
 
-        # Record start time
-        start_time = datetime.now()
-        
-        plan_response, self.json_format_agent_thread = await invoke_agent(
+
+        plan_response, self.json_format_agent_thread, agent_response_logs = await invoke_agent(
             agent=self.task_planner_agent, 
             thread=self.json_format_agent_thread,
             input_text_message=additional_message + plan_generation_prompt, 
             input_image_message=robot_state.get_current_image_content()
         )
         
-        # Record end time
-        end_time = datetime.now()
+        self.task_planner_invocations.append(agent_response_logs)
+        start_time = agent_response_logs.agent_invocation_start_time
+        end_time = agent_response_logs.agent_invocation_end_time
         
         logger.debug("========================================")
         logger.debug(f"Initial plan full response: {str(plan_response)}")
@@ -170,6 +169,7 @@ class RobotPlanner:
             
             
             self.initial_plan_log = PlanGenerationLogs(
+                plan_id=0,
                 plan=self.plan,
                 plan_generation_start_time=start_time,
                 plan_generation_end_time=end_time,

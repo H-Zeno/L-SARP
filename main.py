@@ -296,41 +296,20 @@ async def main():
                         )
                         
                         # Execute the task using thread-based approach for better context management
-                        time_before_task_execution = datetime.now()
-                        
-                        task_completion_response, robot_planner.task_execution_chat_thread = await invoke_agent(
+                        task_completion_response, robot_planner.task_execution_chat_thread, agent_response_logs = await invoke_agent(
                             agent=robot_planner.task_execution_agent,
                             thread=robot_planner.task_execution_chat_thread,
                             input_text_message=task_execution_prompt,
                             input_image_message=robot_state.get_current_image_content()
                         )
                         
-                        time_after_task_execution = datetime.now()
-                        task_execution_time = (time_after_task_execution - time_before_task_execution).total_seconds()
-                        
                         robot_planner.task_execution_logs.append(
                             TaskExecutionLogs(
                                 task_description=task.get("task_description"),
                                 reasoning=task.get("reasoning", ""),
-                                task_start_time=time_before_task_execution,
-                                task_end_time=time_after_task_execution,
-                                task_duration_seconds=task_execution_time,
-                                tool_calls_made=[], # TODO: Log all the exact tool calls made!
+                                agent_invocation=agent_response_logs,
                                 relevant_objects=[obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
                             ))
-                        
-                        # # Add tool calls to the log
-                        # if 'tool_calls' in metrics:
-                        #     for tool_call in metrics['tool_calls']:
-                        #         tool_call_log = {
-                        #             'tool_call_name': tool_call['function_name'],
-                        #             'tool_call_arguments': tool_call['arguments'],
-                        #             'tool_call_start_time': tool_call['start_time'].isoformat(),
-                        #             'tool_call_end_time': tool_call['end_time'].isoformat(),
-                        #             'tool_call_reasoning': '',  # No reasoning provided in the current metrics
-                        #             'tool_call_response': ''    # No response captured yet
-                        #         }
-                        #         task_execution_log['tool_calls_made'].append(tool_call_log)
                         
 
                         # Break out of the task execution loop when replanning
@@ -340,15 +319,17 @@ async def main():
                             # When replanned, the task is not completed
                             break
                         
+                        # Now the completion of a task is seen as completing one task execution agent invocation
                         # log the completion of the task (since no replanning took place)
                         robot_planner.task_execution_logs[-1].completed = True
+                        robot_planner.task_execution_logs[-1].agent_invocation.agent_invocation_end_time = datetime.now()
                         robot_planner.tasks_completed.append(task.get("task_description"))
                         
                         # Reset the thread for the next task to ensure clean context
                         robot_planner.task_execution_chat_thread = None
                         
-                    # Check if the goal is completed
-                    await TaskPlannerGoalChecker().check_if_goal_is_completed(explanation="All planned tasks seem to have been completed.")
+                    # Check if the goal is completed, this will set the robot_planner.goal_completed flag
+                    goal_completion_response = await TaskPlannerGoalChecker().check_if_goal_is_completed(explanation="All planned tasks seem to have been completed.")
                     
                     if robot_planner.goal_completed:
                         logger.info("Goal completed successfully!")
@@ -356,7 +337,7 @@ async def main():
                     
                     else:
                         logger.info("Goal is not completed yet. Replanning...")
-                        await ReplanningPlugin().update_task_plan("The goal is not completed yet. Please replan.")
+                        await ReplanningPlugin().update_task_plan(goal_completion_response)
                         
                 # Goal Completed, save logging details.
                 goal_end_time = datetime.now()
@@ -368,7 +349,7 @@ async def main():
                     initial_plan=robot_planner.initial_plan_log,
                     updated_plans=robot_planner.plan_generation_logs,
                     total_replanning_count=robot_planner.replanning_count,
-                    tool_calls=robot_planner.planner_tool_calls
+                    task_planner_invocations=robot_planner.task_planner_invocations
                 )
                 
                 # Task Execution Agent Logs

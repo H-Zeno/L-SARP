@@ -41,12 +41,13 @@ class TaskPlannerCommunicationPlugin:
         
     
         # In invoking the task planner agent, it is possible that it will invoke a replanning. 
-        response, robot_planner.planning_chat_thread = await invoke_agent(
+        response, robot_planner.planning_chat_thread, agent_response_logs = await invoke_agent(
             agent=robot_planner.task_planner_agent, 
             thread=robot_planner.planning_chat_thread,
             input_text_message=request, 
             input_image_message=robot_state.get_current_image_content()
         )
+        robot_planner.task_planner_invocations.append(agent_response_logs)
         
         # Add to the task execution chat history
         await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content=request))

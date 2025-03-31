@@ -2,9 +2,9 @@
 import logging
 import json
 from datetime import datetime
-from typing import Tuple
+from typing import Tuple, List
 
-from configs.goal_execution_log_models import ToolCall
+from configs.goal_execution_log_models import ToolCall, AgentResponse, AgentResponseLogs
 
 # Third-party imports
 from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent, ChatHistoryAgentThread
@@ -19,42 +19,97 @@ from utils.recursive_config import Config
 config = Config()
 logger = logging.getLogger("main")
 
-def _write_content(content: ChatMessageContent) -> None:
-    """Write the content items to the console."""
-    if not content.items:
-        logger.debug("#DEBUG (write content): [(empty)] %s : '(no content)'", content.role)
-        return
 
-    # Iterate through all items in the message content
-    for item in content.items:
-        item_type_name = type(item).__name__
-        message_content = ""
-        log_level = logging.INFO # Default log level
+def _log_agent_response(request: str, messages: List[ChatMessageContent], start_time: datetime, end_time: datetime) -> AgentResponseLogs:
+    """Log all content items from a list of agent messages to the console.
+    
+    This function handles logging of:
+    - Function calls (FunctionCallContent)
+    - Function results (FunctionResultContent)
+    - Text content (TextContent)
+    - # TODO: Image content (ImageContent)
+    - Other content types (logged at debug level)
+    
+    Args:
+        request (str): The request to the agent
+        messages (List[ChatMessageContent]): The messages from the agent
+        start_time (datetime): The start time of the agent response
+        end_time (datetime): The end time of the agent response
+        
+    Returns:
+        AgentResponseLogs: The logs for the agent response
+    """
+    agent_responses = []
+    for msg in messages:
+        if not msg.items:
+            logger.debug("#DEBUG (log response): [(empty)] %s : '(no msg)'", msg.role)
+            continue
+        
+        logger.debug("Processing message with role: %s", msg.role)
 
-        if isinstance(item, FunctionCallContent):
-            # Log arguments as well for more detail
-            args_str = ", ".join(f"{k}={v}" for k, v in item.arguments.items()) if item.arguments else ""
-            # Include id for potential tracking/matching with results
-            message_content = f"tool_request(id={item.id}) = {item.function_name}({args_str})"
-            log_level = logging.INFO # Function calls are important INFO level
-        elif isinstance(item, FunctionResultContent):
-            # Potentially long results, maybe truncate or summarize later if needed. Log full for now.
-            # Include id for potential tracking/matching with requests
-            message_content = f"function_result(id={item.tool_call_id}) = {item.function_name} -> {item.result}"
-            log_level = logging.INFO # Results are important INFO level
-        elif isinstance(item, TextContent):
-            message_content = str(item.text) # Access the text attribute
-            log_level = logging.INFO # Keep existing text logging at INFO
-        elif isinstance(item, ImageContent):
-            message_content = "[ImageContent received]" # Don't log raw image data
-            log_level = logging.DEBUG # Image content might be verbose for INFO
-        else:
-             # Log other types maybe at debug level?
-             logger.debug("#Content: [%s] %s - (Unhandled item type in logger)", item_type_name, content.role)
-             continue # Skip logging unknown types via the main logger.log call below
+        # Iterate through all items in the message msg
+        for item in msg.items:
+            item_type_name = type(item).__name__
+            message_content = ""
+            log_level = logging.INFO  # Default log level
 
-        # Log each processed item with its specific type and role
-        logger.log(log_level, "#Content: [%s] %s : '%s'", item_type_name, content.role, message_content)
+            if isinstance(item, FunctionCallContent):
+                # Log function calls with arguments and ID for tracking
+                message_content = f"Tool Request (Function Call, id={item.id}) = {item.function_name}({item.arguments})"
+                log_level = logging.INFO  # Function calls are important INFO level
+                
+                tool_call_info = ToolCall(
+                    tool_call_name=item.function_name,
+                    tool_call_arguments=json.loads(item.arguments),
+                )
+                
+            elif isinstance(item, FunctionResultContent):
+                # Log function results with ID for tracking
+                message_content = f"Tool Result (Function Result, id={item.id}) = {item.function_name} -> {item.result}"
+                log_level = logging.INFO  # Results are important INFO level
+                
+                # ASSUMPTION: A function result always follows a tool call!!!! # ASSUMPTION
+                agent_response = AgentResponse(
+                    tool_call_content=tool_call_info,
+                    tool_call_result=item.result,
+                )
+                agent_responses.append(agent_response)
+                
+                
+            elif isinstance(item, TextContent):
+                # Log text content
+                message_content = str(item.text)
+                log_level = logging.DEBUG  # Keep existing text logging at INFO
+                
+                agent_response = AgentResponse(
+                    text_content=item.text,
+                )
+                agent_responses.append(agent_response)
+                
+            elif isinstance(item, ImageContent):
+                # Log image content presence without raw data
+                message_content = "[ImageContent received]"
+                log_level = logging.DEBUG  # Image content might be verbose for INFO
+                
+                # TODO: Add image content to agent response
+                
+            else:
+                # Log other types at debug level
+                logger.info("[%s] %s - (Unhandled item type in logger)", item_type_name, msg.role)
+                continue  # Skip logging unknown types via the main logger.log call below
+
+            # Log each processed item with its specific type and role
+            logger.log(log_level, "[%s] %s : '%s'", item_type_name, msg.role, message_content)
+
+    agent_response_logs = AgentResponseLogs(
+        request=request,
+        agent_responses=agent_responses,
+        agent_invocation_start_time=start_time,
+        agent_invocation_end_time=end_time,
+        agent_invocation_duration_seconds=(end_time - start_time).total_seconds()
+    )
+    
+    return agent_response_logs
 
 
 async def invoke_agent(
@@ -94,58 +149,41 @@ async def invoke_agent(
             message = ChatMessageContent(role=AuthorRole.USER, content=input_text_message)
     
     # Save original messages if we shouldn't save to history
+    orig_chat_history = None
+    start_idx = 0
     if thread is not None:
         orig_chat_history = await thread.get_messages()
-    else:
-        orig_chat_history = None
-    
+        start_idx = len(orig_chat_history.messages)
+
     # Start time for tool call tracking
     start_time = datetime.now()
     
     response = await agent.get_response(messages=message, thread=thread, arguments=arguments)
-    logger.debug("Raw response from agent: %s", response)
+    logger.debug("Raw final response message content from agent: %s", response.content)
     
     # End time for tool call tracking
     end_time = datetime.now()
     
-    # Log all content items, including function calls
+    # Get the full chat history after the invocation
     chat_history = await response.thread.get_messages()
     
     # Get the messages that were added during this invocation (the new ones)
-    start_idx = len(orig_chat_history.messages) if orig_chat_history is not None else 0
+    new_messages = chat_history.messages[start_idx+1:] # we ignore the request message, since we log this already
     
-    # Track function calls
-    tool_calls = []
-    for msg in chat_history.messages[start_idx:]:
-        # Log the role of each message to better understand the conversation flow
-        logger.debug("Processing message with role: %s", msg.role)
-        
-        # Process all messages regardless of role
-        for item in msg.items:
-            if isinstance(item, FunctionCallContent):
-                logger.info("#Function Call: %s(%s)", item.function_name, item.arguments)
-                tool_call_info = ToolCall(
-                    tool_call_name=item.function_name,
-                    tool_call_arguments=json.loads(item.arguments),
-                    tool_call_reasoning="", # save the previous text message as reasoning
-                    tool_call_response="", # save the next text message as response (possible, or the actual function result)
-                    tool_call_start_time=start_time,
-                    tool_call_end_time=end_time,
-                    tool_call_duration_seconds=(end_time - start_time).total_seconds()
-                )
-                tool_calls.append(tool_call_info)
-
-    # Log the final response content
-    _write_content(response.content)
+    # Log all new messages (including function calls, results, text, etc.)
+    agent_response_logs = _log_agent_response(request=input_text_message, messages=new_messages, start_time=start_time, end_time=end_time)
     
-    # If we shouldn't save to history, create a new thread with the original messages
-    if not save_to_history:
-        # Create a new thread with the original messages
-        new_thread = ChatHistoryAgentThread(chat_history=orig_chat_history, thread_id=thread._thread_id)
-        await new_thread.create()
-        thread = new_thread
+    if not save_to_history and orig_chat_history is None:
+        logger.debug("Message thread was empty when invoking agent, clearing all message history in the thread (save_to_history is False).")
+        response.thread._chat_history.clear()
         
-    return response.content, response.thread
+    # If we shouldn't save to history, restore the original thread state
+    elif not save_to_history and orig_chat_history is not None:
+        logger.debug("Restoring chat history as save_to_history is False.")
+        response.thread._chat_history = orig_chat_history # Directly manipulating might be risky?
+        # Consider if response.thread needs replacement: thread = new_thread_with_old_history
+    
+    return response.content, response.thread, agent_response_logs
 
 
 async def invoke_agent_group_chat(
