@@ -139,7 +139,7 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
 
 class TaskPlannerAgent(RobotAgentBase):
     """Agent responsible for planning tasks based on goals."""
-    service_id = "gpt4o"
+    service_id = "o3-mini"
 
     def __init__(self):
         kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=False)

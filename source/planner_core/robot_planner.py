@@ -3,7 +3,8 @@ import json
 import logging
 import re
 import sys
-from typing import Annotated, Dict, Tuple
+from datetime import datetime
+from typing import Annotated, Dict, List, Tuple
 
 # Third-party imports
 from dotenv import dotenv_values
@@ -20,13 +21,16 @@ from configs.agent_instruction_prompts import (
 )
 
 from configs.scenes_and_plugins_config import Scene
+from configs.json_object_models import TaskPlannerResponse
+from configs.goal_execution_log_models import (
+    PlanGenerationLogs,
+)
+
 from planner_core.robot_state import RobotStateSingleton
 from utils.agent_utils import invoke_agent
 from robot_utils.frame_transformer import FrameTransformerSingleton
 from utils.recursive_config import Config
 from utils.singletons import _SingletonWrapper
-
-from planner_core.json_object_models import TaskPlannerResponse
 
 # Initialize robot state singleton
 robot_state = RobotStateSingleton()
@@ -64,7 +68,18 @@ class RobotPlanner:
         self.replanned = False
         self.task = None
         self.tasks_completed = []
-        self.actions_taken = []
+        
+        # Planner log states
+        self.initial_plan_log = None
+        self.plan_generation_logs = []
+        self.replanning_count = 0
+        self.planner_tool_calls = []
+        
+        # Task execution logs   
+        self.task_execution_logs = []
+        
+        # Goal completion checker logs
+        self.goal_completion_checker_logs = []
         
         # Initialize chat history threads
         
@@ -110,12 +125,18 @@ class RobotPlanner:
         logger.info(f"Plan generation prompt: {plan_generation_prompt}")
         logger.info("========================================")
 
+        # Record start time
+        start_time = datetime.now()
+        
         plan_response, self.json_format_agent_thread = await invoke_agent(
             agent=self.task_planner_agent, 
             thread=self.json_format_agent_thread,
             input_text_message=additional_message + plan_generation_prompt, 
             input_image_message=robot_state.get_current_image_content()
         )
+        
+        # Record end time
+        end_time = datetime.now()
         
         logger.debug("========================================")
         logger.debug(f"Initial plan full response: {str(plan_response)}")
@@ -141,10 +162,21 @@ class RobotPlanner:
             plan_json_str = str(plan_response_str).replace('```json', '').replace('```', '').strip()
 
         try:
+            logger.info("Successfully parsed JSON from initial plan generation response.")
             logger.debug("========================================")
             logger.debug(f"Plan JSON string: {plan_json_str}")   
             logger.debug("========================================")
             self.plan = json.loads(plan_json_str)
+            
+            
+            self.initial_plan_log = PlanGenerationLogs(
+                plan=self.plan,
+                plan_generation_start_time=start_time,
+                plan_generation_end_time=end_time,
+                plan_generation_duration_seconds=(end_time - start_time).total_seconds(),
+                plan_generation_reasoning="Initial plan generation",
+                chain_of_thought=chain_of_thought
+            )
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from response: {e}")
@@ -179,7 +211,6 @@ class RobotPlanner:
         # self.tasks_completed = []
         # self.task = None
         # self.actions_taken = []
-    
         
         # Create initial plan for the new goal
         chain_of_thought = await self._create_task_plan()

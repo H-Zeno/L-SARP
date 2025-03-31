@@ -1,0 +1,59 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Python Projects Guide
+
+# Python Development Best Practices Guide for the LSARP repository
+
+## Project Structure
+- **Source Code**: Store all source code in a dedicated `source` directory.
+- **Tests**: Maintain a separate `tests` directory for all test cases.
+- **Docs**: Use a `docs` directory for documentation files.
+- **Config**: Keep configuration files in a `configs` directory.
+- **Data**: 
+    1. Use the `data` directory for 'raw' data that gets processed like point clouds
+    2. Use the `data_scene` directory to save planning data and observations of the current scene
+
+## Modular Design
+- **Planner Core**: Store the python files that make up the robot planner in the `source/planner_core` directory
+- **Plugins**: Store the plugins that can get called by the planning framework in the `source/planning_plugins`, `source/retrieval_plugins` and `source/robot_plugins` respectively.
+- **Utilities**: Store general utility functions in the `source/utils` directory and store robot utility functions in the `source/robot_utils` directory
+
+## Configuration Management
+- Use the `configs/config.yaml' for configuration management.
+- Store sensitive information in `.env_core_planner` file and load them using libraries like `python-dotenv`.
+
+## Error Handling and Logging
+- Implement robust error handling with try/except blocks, but don't overdo it.
+- Capture context in logs for better debugging. Use the `configs/logging_conf.ini` logging configurations
+
+## Testing
+- Write comprehensive tests using `pytest`.
+- Ensure test coverage is at least 80%.
+- Use fixtures and parametrize tests for better coverage.
+
+## Documentation
+- Use docstrings for all functions and classes.
+- Maintain a detailed `README.md` file in the root directory.
+
+## Dependency Management
+- Manage dependencies using the `requirements.txt` file
+- Use virtual environments to isolate dependencies. (we are using the LSARP conda environment)
+
+## Code Style
+- Ensure code style consistency using `Ruff`.
+- Follow PEP 8 guidelines for code formatting.
+
+## CI/CD
+- Implement CI/CD pipelines using GitHub Actions.
+- Automate testing, linting, and deployment processes.
+
+## AI-Friendly Coding Practices
+- Use descriptive variable and function names.
+- Include type hints for better code clarity.
+- Add detailed comments for complex logic.
+- Provide rich error context for easier debugging.
+
+By following these best practices, you can ensure that your Python projects are well-structured, maintainable, and optimized for AI-assisted development.

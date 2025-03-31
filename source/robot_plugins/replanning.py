@@ -1,7 +1,8 @@
 import logging
 import re
 import json
-from typing import Annotated, Dict, Tuple, List
+from datetime import datetime
+from typing import Annotated
 
 from langchain.output_parsers import PydanticOutputParser
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
@@ -9,15 +10,16 @@ from semantic_kernel.contents import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 
 from configs.agent_instruction_prompts import (
-    CREATE_TASK_PLANNER_PROMPT_TEMPLATE,
     UPDATE_TASK_PLANNER_PROMPT_TEMPLATE
 )
 from planner_core.robot_planner import RobotPlannerSingleton
 from planner_core.robot_state import RobotStateSingleton
-from planner_core.json_object_models import TaskPlannerResponse
+from configs.json_object_models import TaskPlannerResponse
+from configs.goal_execution_log_models import PlanGenerationLogs
 from robot_utils.frame_transformer import FrameTransformerSingleton
 from utils.agent_utils import invoke_agent
 from utils.recursive_config import Config
+
 
 # Get singleton instances
 robot_state = RobotStateSingleton()
@@ -56,13 +58,16 @@ class ReplanningPlugin:
         )
 
         # This can technically call again the update task planner plugin (hhmm)
+        plan_generation_start_time = datetime.now()
         updated_plan_response, robot_planner.json_format_agent_thread = await invoke_agent(
             agent=robot_planner.task_planner_agent, 
             thread=robot_planner.json_format_agent_thread,
             input_text_message=update_plan_prompt, 
             input_image_message=robot_state.get_current_image_content()
         )
-
+        plan_generation_end_time = datetime.now()
+        plan_generation_duration_seconds = (plan_generation_end_time - plan_generation_start_time).total_seconds()
+        
         # logger.info("========================================")
         # logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
         # logger.info("========================================")
@@ -89,8 +94,23 @@ class ReplanningPlugin:
             updated_plan_json_str = str(updated_plan_response_str).replace('```json', '').replace('```', '').strip()
             
         try:
+            logger.info("Successfully parsed JSON from updated plan generation response.")
+            logger.debug("========================================")
+            logger.debug(f"Updated plan JSON string: {updated_plan_json_str}")   
+            logger.debug("========================================")
+            
             robot_planner.plan = json.loads(updated_plan_json_str)
-           
+            robot_planner.replanning_count += 1 # log that the replanning took place
+            robot_planner.plan_generation_logs.append(
+                PlanGenerationLogs(
+                    plan=robot_planner.plan,
+                    plan_generation_start_time=plan_generation_start_time,
+                    plan_generation_end_time=plan_generation_end_time,
+                    plan_generation_duration_seconds=plan_generation_duration_seconds,
+                    plan_generation_reasoning="", # TODO: Add reasoning for the updated plan
+                    chain_of_thought=chain_of_thought
+                ))
+            
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from response: {e}")
             await robot_planner.update_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.")

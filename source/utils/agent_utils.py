@@ -1,16 +1,20 @@
 # Standard library imports
 import logging
-from typing import Optional, Tuple, AsyncIterator, Union
+import json
+from datetime import datetime
+from typing import Tuple
+
+from configs.goal_execution_log_models import ToolCall
 
 # Third-party imports
 from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent, ChatHistoryAgentThread
-from semantic_kernel.contents import ChatHistory, ChatMessageContent, ImageContent, TextContent
-from semantic_kernel.contents.chat_message_content import ChatMessageContent
+from semantic_kernel.contents import ChatMessageContent, ImageContent, TextContent
 from semantic_kernel.contents.function_call_content import FunctionCallContent
 from semantic_kernel.contents.function_result_content import FunctionResultContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.functions.kernel_arguments import KernelArguments
 from utils.recursive_config import Config
+
 
 config = Config()
 logger = logging.getLogger("main")
@@ -95,14 +99,23 @@ async def invoke_agent(
     else:
         orig_chat_history = None
     
+    # Start time for tool call tracking
+    start_time = datetime.now()
+    
     response = await agent.get_response(messages=message, thread=thread, arguments=arguments)
     logger.debug("Raw response from agent: %s", response)
+    
+    # End time for tool call tracking
+    end_time = datetime.now()
     
     # Log all content items, including function calls
     chat_history = await response.thread.get_messages()
     
     # Get the messages that were added during this invocation (the new ones)
-    start_idx = len(orig_chat_history) if orig_chat_history is not None else 0
+    start_idx = len(orig_chat_history.messages) if orig_chat_history is not None else 0
+    
+    # Track function calls
+    tool_calls = []
     for msg in chat_history.messages[start_idx:]:
         # Log the role of each message to better understand the conversation flow
         logger.debug("Processing message with role: %s", msg.role)
@@ -111,6 +124,16 @@ async def invoke_agent(
         for item in msg.items:
             if isinstance(item, FunctionCallContent):
                 logger.info("#Function Call: %s(%s)", item.function_name, item.arguments)
+                tool_call_info = ToolCall(
+                    tool_call_name=item.function_name,
+                    tool_call_arguments=json.loads(item.arguments),
+                    tool_call_reasoning="", # save the previous text message as reasoning
+                    tool_call_response="", # save the next text message as response (possible, or the actual function result)
+                    tool_call_start_time=start_time,
+                    tool_call_end_time=end_time,
+                    tool_call_duration_seconds=(end_time - start_time).total_seconds()
+                )
+                tool_calls.append(tool_call_info)
 
     # Log the final response content
     _write_content(response.content)

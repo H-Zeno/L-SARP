@@ -1,4 +1,6 @@
 import logging
+import time
+from datetime import datetime
 from typing import Annotated, Dict, Tuple, List
 
 from semantic_kernel.agents import ChatHistoryAgentThread
@@ -9,6 +11,9 @@ from configs.agent_instruction_prompts import (
     TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE,
     TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE,
     TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE
+)
+from configs.goal_execution_log_models import (
+    GoalCompletionCheckerLogs,
 )
 from planner_core.robot_planner import RobotPlannerSingleton
 from planner_core.robot_state import RobotStateSingleton
@@ -50,13 +55,16 @@ class TaskExecutionGoalChecker:
         logger.debug("========================================")
         logger.debug(f"Goal checker prompt (task execution): {check_if_goal_is_completed_prompt}")
         logger.debug("========================================")
-        
+
+        start_time = datetime.now()
         response, robot_planner.planning_chat_thread = await invoke_agent(
             agent=robot_planner.goal_completion_checker_agent,
             thread=robot_planner.planning_chat_thread,
             input_text_message=check_if_goal_is_completed_prompt,
             input_image_message=robot_state.get_current_image_content()
         )
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
         
         logger.info("Task execution goal checker response: %s", response)
         
@@ -64,11 +72,21 @@ class TaskExecutionGoalChecker:
         await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content=check_if_goal_is_completed_prompt))
         await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content=str(response)))
         
-        
         if termination_keyword.lower() in str(response).lower():
             robot_planner.goal_completed = True
             logger.info("Goal completion flag set to True")
             
+        robot_planner.goal_completion_checker_logs.append(
+            GoalCompletionCheckerLogs(
+                completion_check_requested_by_agent="TaskExecutionAgent",
+                completion_check_request=explanation,
+                completion_check_response=str(response),
+                completion_check_start_time=start_time,
+                completion_check_end_time=end_time,
+                completion_check_duration_seconds=duration
+            )
+        )
+        
         return None
 
 class TaskPlannerGoalChecker:
@@ -90,18 +108,32 @@ class TaskPlannerGoalChecker:
         logger.debug(f"Goal checker prompt (task planner): {check_if_goal_is_completed_prompt}")
         logger.debug("========================================")
         
+        start_time = datetime.now()
         response, robot_planner.planning_chat_thread = await invoke_agent(
             agent=robot_planner.goal_completion_checker_agent,
             thread=robot_planner.planning_chat_thread,
             input_text_message=check_if_goal_is_completed_prompt,
             input_image_message=robot_state.get_current_image_content()
         )
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
         
         logger.info("Task planner goal completion checker response: %s", response)
         
         if termination_keyword.lower() in str(response).lower():
             robot_planner.goal_completed = True
             logger.info("Goal completion flag set to True")
-            
+        
+        robot_planner.goal_completion_checker_logs.append(
+            GoalCompletionCheckerLogs(
+                completion_check_requested_by_agent="TaskPlannerAgent",
+                completion_check_request=explanation,
+                completion_check_response=str(response),
+                completion_check_start_time=start_time,
+                completion_check_end_time=end_time,
+                completion_check_duration_seconds=duration
+            )
+        )
+        
         return None
 
