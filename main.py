@@ -9,13 +9,6 @@ from dotenv import dotenv_values
 
 # Third-party imports
 from bosdyn import client as bosdyn_client
-from semantic_kernel.contents.chat_history import ChatHistory
-from semantic_kernel.agents import ChatHistoryAgentThread
-from semantic_kernel.contents.utils.author_role import AuthorRole
-from semantic_kernel.contents import (
-    ChatHistorySummarizationReducer,
-)
-from semantic_kernel.exceptions.agent_exceptions import AgentThreadOperationException
 
 from robot_utils.base_LSARP import (
     initialize_robot_connection,
@@ -39,6 +32,14 @@ from utils.agent_utils import invoke_agent
 from utils.recursive_config import Config
 from utils.singletons import RobotLeaseClientSingleton
 from utils.logging_utils import setup_logging
+
+from configs.goal_execution_log_models import (
+    GoalExecutionLogs,
+    TaskPlannerAgentLogs,
+    TaskExecutionAgentLogs,
+    GoalCompletionCheckerAgentLogs,
+    TaskExecutionLogs,
+)
 
 
 # Initialize singletons
@@ -203,6 +204,11 @@ async def main():
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Invalid JSON format in goals file: {e}")
             
+            # Initialize the execution logs directory
+            execution_logs_dir = Path(path_to_scene_data / active_scene_name)
+            execution_logs_dir.mkdir(parents=True, exist_ok=True)
+            execution_logs_path = execution_logs_dir / f"execution_logs_{timestamp}.json"
+            
             # Process each goal
             for nr, goal in goals.items():
                 
@@ -267,9 +273,13 @@ async def main():
                 with open(plan_gen_save_path, 'w') as file:
                     file.write(new_data)
 
+                # Loop for task execution and potential replanning
+                goal_start_time = datetime.now()
+                
                 while True:
                     planned_tasks = robot_planner.plan["tasks"]
                     for task in planned_tasks:
+                        
                         robot_planner.task = task
                         logger.info("%s\nExecuting task: %s\n%s", separator, task, separator)
                         
@@ -286,16 +296,42 @@ async def main():
                         )
                         
                         # Execute the task using thread-based approach for better context management
+                        time_before_task_execution = datetime.now()
+                        
                         task_completion_response, robot_planner.task_execution_chat_thread = await invoke_agent(
                             agent=robot_planner.task_execution_agent,
                             thread=robot_planner.task_execution_chat_thread,
                             input_text_message=task_execution_prompt,
                             input_image_message=robot_state.get_current_image_content()
                         )
-
-                        # # Attempt chat history reduction for both threads
-                        # await reduce_and_log_chat_history(robot_planner.task_execution_chat_thread, "Task Execution")
-                        # await reduce_and_log_chat_history(robot_planner.planning_chat_thread, "Planning")
+                        
+                        time_after_task_execution = datetime.now()
+                        task_execution_time = (time_after_task_execution - time_before_task_execution).total_seconds()
+                        
+                        robot_planner.task_execution_logs.append(
+                            TaskExecutionLogs(
+                                task_description=task.get("task_description"),
+                                reasoning=task.get("reasoning", ""),
+                                task_start_time=time_before_task_execution,
+                                task_end_time=time_after_task_execution,
+                                task_duration_seconds=task_execution_time,
+                                tool_calls_made=[], # TODO: Log all the exact tool calls made!
+                                relevant_objects=[obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
+                            ))
+                        
+                        # # Add tool calls to the log
+                        # if 'tool_calls' in metrics:
+                        #     for tool_call in metrics['tool_calls']:
+                        #         tool_call_log = {
+                        #             'tool_call_name': tool_call['function_name'],
+                        #             'tool_call_arguments': tool_call['arguments'],
+                        #             'tool_call_start_time': tool_call['start_time'].isoformat(),
+                        #             'tool_call_end_time': tool_call['end_time'].isoformat(),
+                        #             'tool_call_reasoning': '',  # No reasoning provided in the current metrics
+                        #             'tool_call_response': ''    # No response captured yet
+                        #         }
+                        #         task_execution_log['tool_calls_made'].append(tool_call_log)
+                        
 
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned:
@@ -303,9 +339,11 @@ async def main():
                             robot_planner.replanned = False
                             # When replanned, the task is not completed
                             break
-
+                        
+                        # log the completion of the task (since no replanning took place)
+                        robot_planner.task_execution_logs[-1].completed = True
                         robot_planner.tasks_completed.append(task.get("task_description"))
-
+                        
                         # Reset the thread for the next task to ensure clean context
                         robot_planner.task_execution_chat_thread = None
                         
@@ -319,6 +357,56 @@ async def main():
                     else:
                         logger.info("Goal is not completed yet. Replanning...")
                         await ReplanningPlugin().update_task_plan("The goal is not completed yet. Please replan.")
+                        
+                # Goal Completed, save logging details.
+                goal_end_time = datetime.now()
+                goal_duration = (goal_end_time - goal_start_time).total_seconds()
+                
+                # Task Planner Agent Logs
+                task_planner_agent_logs = TaskPlannerAgentLogs(
+                    ai_service_id=robot_planner.task_planner_agent.service_id,
+                    initial_plan=robot_planner.initial_plan_log,
+                    updated_plans=robot_planner.plan_generation_logs,
+                    total_replanning_count=robot_planner.replanning_count,
+                    tool_calls=robot_planner.planner_tool_calls
+                )
+                
+                # Task Execution Agent Logs
+                task_execution_agent_logs = TaskExecutionAgentLogs(
+                    ai_service_id=robot_planner.task_execution_agent.service_id,
+                    task_logs=robot_planner.task_execution_logs
+                )
+                
+                # Goal Completion Checker Agent Logs
+                goal_completion_checker_agent_logs = GoalCompletionCheckerAgentLogs(
+                    ai_service_id=robot_planner.goal_completion_checker_agent.service_id,
+                    completion_check_logs=robot_planner.goal_completion_checker_logs
+                )
+                
+                # Goal Execution Log
+                goal_execution_log = GoalExecutionLogs(
+                    goal=goal,
+                    goal_number=nr,
+                    start_time=goal_start_time,
+                    end_time=goal_end_time,
+                    duration_seconds=goal_duration,
+                    task_planner_agent=task_planner_agent_logs,
+                    task_execution_agent=task_execution_agent_logs,
+                    goal_completion_checker_agent=goal_completion_checker_agent_logs
+                )
+                
+                # Save the execution logs after each goal
+                if execution_logs_path.exists():
+                    with open(execution_logs_path, 'r') as file:
+                        existing_execution_logs = json.load(file)
+                else:
+                    existing_execution_logs = {}
+                        
+                existing_execution_logs[nr] = json.loads(goal_execution_log.model_dump_json())
+                
+                with open(execution_logs_path, 'w', encoding='utf-8') as file:
+                    json.dump(existing_execution_logs, file, indent=2)
+                
 
             logger.info("Finished processing Offline Predefined Goals")
             
@@ -330,6 +418,7 @@ async def main():
 
         if use_robot:
             safe_power_off()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
