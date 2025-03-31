@@ -62,7 +62,7 @@ class TaskExecutionGoalChecker:
             input_text_message=check_if_goal_is_completed_prompt,
             input_image_message=robot_state.get_current_image_content()
         )
-        
+        agent_response_logs.plan_id = robot_planner.replanning_count
         logger.info("Task execution goal checker response: %s", response)
         
         # We save the goal check in the task execution chat history
@@ -111,6 +111,7 @@ class TaskPlannerGoalChecker:
             input_image_message=robot_state.get_current_image_content()
         )
         
+        agent_response_logs.plan_id = robot_planner.replanning_count
         logger.info("Task planner goal completion checker response: %s", response)
         
         if termination_keyword.lower() in str(response).lower():

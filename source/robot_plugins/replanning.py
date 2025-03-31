@@ -65,10 +65,6 @@ class ReplanningPlugin:
             input_image_message=robot_state.get_current_image_content()
         )
         
-        robot_planner.task_planner_invocations.append(agent_response_logs)
-        start_time = agent_response_logs.agent_invocation_start_time
-        end_time = agent_response_logs.agent_invocation_end_time
-        
         # logger.info("========================================")
         # logger.info(f"Reasoning about the updated plan: {str(updated_plan_response)}")
         # logger.info("========================================")
@@ -102,6 +98,13 @@ class ReplanningPlugin:
             
             robot_planner.plan = json.loads(updated_plan_json_str)
             robot_planner.replanning_count += 1 # log that the replanning took place
+            
+            agent_response_logs.plan_id = robot_planner.replanning_count
+            robot_planner.task_planner_invocations.append(agent_response_logs)
+            start_time = agent_response_logs.agent_invocation_start_time
+            end_time = agent_response_logs.agent_invocation_end_time
+            
+            
             robot_planner.plan_generation_logs.append(
                 PlanGenerationLogs(
                     plan_id=robot_planner.replanning_count,

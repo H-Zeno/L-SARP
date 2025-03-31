@@ -41,6 +41,7 @@ class AgentResponse(BaseModel):
 class AgentResponseLogs(BaseModel):
     """Logs to track the full response of an agent invokation"""
     request: str
+    plan_id: Optional[int] = None
     agent_responses: List[AgentResponse]
     agent_invocation_start_time: datetime
     agent_invocation_end_time: datetime
@@ -72,8 +73,9 @@ class TaskExecutionLogs(BaseModel):
     """Logs for a task."""
     task_description: str
     reasoning: str
+    plan_id: int # the id of the plan that this task belongs to
+    relevant_objects_identified_by_planner: List[str]
     agent_invocation: AgentResponseLogs
-    relevant_objects: List[str]
     completed: bool = False
 
 # What do we do when the task is not completed?
@@ -105,6 +107,7 @@ class GoalExecutionLogs(BaseModel):
     """Logs for one goal execution."""
     goal: str
     goal_number: int
+    dataset_name: Optional[str] = None
     start_time: datetime
     end_time: datetime
     duration_seconds: float

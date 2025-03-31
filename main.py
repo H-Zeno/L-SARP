@@ -26,8 +26,12 @@ from LostFound.src.scene_graph import get_scene_graph
 
 from robot_plugins.replanning import ReplanningPlugin
 from robot_plugins.goal_checker import TaskPlannerGoalChecker
+
 # Local imports
 from configs.scenes_and_plugins_config import Scene
+from configs.agent_instruction_prompts import (
+    TASK_EXECUTION_PROMPT_TEMPLATE,
+)
 from utils.agent_utils import invoke_agent
 from utils.recursive_config import Config
 from utils.singletons import RobotLeaseClientSingleton
@@ -147,7 +151,6 @@ async def main():
 
     # Create timestamp for the responses file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    responses = {}
     separator = "======================="
 
     ############################################################
@@ -212,7 +215,7 @@ async def main():
             # Process each goal
             for nr, goal in goals.items():
                 
-                # Initialize a frsh robot planner instance for each goal
+                # Initialize a fresh robot planner instance for each goal
                 robot_planner.set_instance(RobotPlanner(
                     task_planner_agent=TaskPlannerAgent(), 
                     task_execution_agent=TaskExecutionAgent(), 
@@ -225,57 +228,13 @@ async def main():
                 goal_text = f"{nr}. {goal}"
                 logger.info(separator)
                 logger.info(goal_text)
-
-                # Task execution prompt template
-                task_completion_prompt_template = """
-                It is your job to complete the following task: {task}
                 
-                This task is part of the following plan: {plan}
-
-                The following tasks have already been completed: {tasks_completed}
-
-                Here is the scene graph:
-                {scene_graph}
-                
-                Here is the robot's current position:
-                {robot_position}
-                """
-
-                # Set the goal and create the initial plan
-                time_before = datetime.now()
-                initial_plan, chain_of_thought = await robot_planner.create_task_plan_from_goal(goal)
-                time_after = datetime.now()
-                inference_time = time_after - time_before
-                logger.info("Time taken for inference: %s", inference_time)
-
-                # Record the results
-                goal_response = {
-                    'inference_time (seconds)': str(inference_time.seconds),
-                    'zero_shot_plan': initial_plan,
-                    'chain_of_thought': chain_of_thought
-                }
-
-                # Save the plan results
-                plan_gen_save_path = Path(path_to_scene_data / active_scene_name / "initial_plans.json")
-                plan_gen_save_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                if not plan_gen_save_path.exists():
-                    with open(plan_gen_save_path, 'w', encoding='utf-8') as file:
-                        json.dump({}, file)
-
-                with open(plan_gen_save_path, 'r') as file:
-                    existing_data = json.load(file)
-                    existing_goal_responses = existing_data.get(goal, {})
-                    existing_goal_responses[robot_planner.task_planner_agent.service_id] = goal_response
-                    existing_data[goal] = existing_goal_responses
-                    new_data = json.dumps(existing_data, indent=2)
-
-                with open(plan_gen_save_path, 'w') as file:
-                    file.write(new_data)
-
                 # Loop for task execution and potential replanning
                 goal_start_time = datetime.now()
                 
+                # Set the goal and create the initial plan
+                await robot_planner.create_task_plan_from_goal(goal)
+
                 while True:
                     planned_tasks = robot_planner.plan["tasks"]
                     for task in planned_tasks:
@@ -287,7 +246,7 @@ async def main():
                             logger.info("Current robot frame: %s", robot_state.frame_name)
 
                         # Format the task execution prompt
-                        task_execution_prompt = task_completion_prompt_template.format(
+                        task_execution_prompt = TASK_EXECUTION_PROMPT_TEMPLATE.format(
                             task=task,
                             plan=robot_planner.plan,
                             tasks_completed=robot_planner.tasks_completed,
@@ -307,10 +266,10 @@ async def main():
                             TaskExecutionLogs(
                                 task_description=task.get("task_description"),
                                 reasoning=task.get("reasoning", ""),
+                                plan_id=robot_planner.replanning_count,
                                 agent_invocation=agent_response_logs,
-                                relevant_objects=[obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
+                                relevant_objects_identified_by_planner=[obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
                             ))
-                        
 
                         # Break out of the task execution loop when replanning
                         if robot_planner.replanned:

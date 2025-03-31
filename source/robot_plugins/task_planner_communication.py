@@ -47,6 +47,8 @@ class TaskPlannerCommunicationPlugin:
             input_text_message=request, 
             input_image_message=robot_state.get_current_image_content()
         )
+        
+        agent_response_logs.plan_id = robot_planner.replanning_count
         robot_planner.task_planner_invocations.append(agent_response_logs)
         
         # Add to the task execution chat history

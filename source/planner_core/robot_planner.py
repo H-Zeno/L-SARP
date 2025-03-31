@@ -133,10 +133,6 @@ class RobotPlanner:
             input_image_message=robot_state.get_current_image_content()
         )
         
-        self.task_planner_invocations.append(agent_response_logs)
-        start_time = agent_response_logs.agent_invocation_start_time
-        end_time = agent_response_logs.agent_invocation_end_time
-        
         logger.debug("========================================")
         logger.debug(f"Initial plan full response: {str(plan_response)}")
         logger.debug("========================================")
@@ -167,6 +163,10 @@ class RobotPlanner:
             logger.debug("========================================")
             self.plan = json.loads(plan_json_str)
             
+            agent_response_logs.plan_id = 0
+            self.task_planner_invocations.append(agent_response_logs)
+            start_time = agent_response_logs.agent_invocation_start_time
+            end_time = agent_response_logs.agent_invocation_end_time
             
             self.initial_plan_log = PlanGenerationLogs(
                 plan_id=0,

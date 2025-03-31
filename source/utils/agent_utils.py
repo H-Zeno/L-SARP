@@ -15,10 +15,8 @@ from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.functions.kernel_arguments import KernelArguments
 from utils.recursive_config import Config
 
-
 config = Config()
 logger = logging.getLogger("main")
-
 
 def _log_agent_response(request: str, messages: List[ChatMessageContent], start_time: datetime, end_time: datetime) -> AgentResponseLogs:
     """Log all content items from a list of agent messages to the console.
