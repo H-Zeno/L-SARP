@@ -108,6 +108,8 @@ class GoalExecutionLogs(BaseModel):
     """Logs for one goal execution."""
     goal: str
     goal_number: int
+    goal_completed: bool
+    goal_failed_max_tries: bool
     complexity: int
     ambiguity: int
     dataset_name: Optional[str] = None

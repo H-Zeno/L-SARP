@@ -53,7 +53,7 @@ class ReplanningPlugin:
             tasks_completed=', '.join(map(str, robot_planner.tasks_completed)), 
             planning_chat_history=planning_chat_history, 
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-            robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
+            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
             model_description=model_desc
         )
 

@@ -119,6 +119,8 @@ class NavigationPlugin:
 
             if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
                 logger.info(f"Moving to object with id {object_id} and centroid {object_centroid_pose} in simulation (without robot).")
+                logger.info(f"Setting virtual robot pose to {object_centroid_pose}")
+                robot_state.virtual_robot_pose = object_centroid_pose
                 return None
             
             # Determine appropriate interaction pose based on object type

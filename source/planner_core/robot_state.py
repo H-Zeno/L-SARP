@@ -95,6 +95,7 @@ class RobotState:
             self.scene_graph = None
         
         self.current_room: str = "unknown" # Can be loaded from the scene configuration file
+        self.virtual_robot_pose = None
         
     def set_image_state(self, image: np.ndarray) -> None:
         """Set the current image state."""

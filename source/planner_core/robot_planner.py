@@ -73,6 +73,7 @@ class RobotPlanner:
         self.initial_plan_log = None
         self.plan_generation_logs = []
         self.replanning_count = 0
+        self.max_replanning_count = config.get("robot_planner_settings", {}).get("max_replanning_count", 3)
         self.task_planner_invocations = []
         
         # Task execution logs   
@@ -117,12 +118,12 @@ class RobotPlanner:
             goal=self.goal, 
             model_description=model_desc,
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()), 
-            robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
         )
 
-        logger.info("========================================")
-        logger.info(f"Plan generation prompt: {plan_generation_prompt}")
-        logger.info("========================================")
+        logger.debug("========================================")
+        logger.debug(f"Plan generation prompt: {plan_generation_prompt}")
+        logger.debug("========================================")
 
 
         plan_response, self.json_format_agent_thread, agent_response_logs = await invoke_agent(
@@ -157,9 +158,9 @@ class RobotPlanner:
 
         try:
             logger.info("Successfully parsed JSON from initial plan generation response.")
-            logger.debug("========================================")
-            logger.debug(f"Plan JSON string: {plan_json_str}")   
-            logger.debug("========================================")
+            logger.info("========================================")
+            logger.info(f"Plan JSON string: {plan_json_str}")   
+            logger.info("========================================")
             self.plan = json.loads(plan_json_str)
             
             agent_response_logs.plan_id = 0
@@ -205,6 +206,7 @@ class RobotPlanner:
         
         # Planner states
         self.goal_completed = False
+        self.goal_failed_max_tries = False
         self.plan = None
         self.replanned = False
         self.task = None
@@ -214,6 +216,7 @@ class RobotPlanner:
         self.initial_plan_log = None
         self.plan_generation_logs = []
         self.replanning_count = 0
+        self.max_replanning_count = config.get("robot_planner_settings", {}).get("max_replanning_count", 3)
         self.task_planner_invocations = []
         
         # Task execution logs   

@@ -44,7 +44,7 @@ class TaskExecutionGoalChecker:
         
         # Explicitly reset the flag at the start of each check
         # robot_planner.goal_completed = False
-        logger.info("Goal flag explicitly reset to False at start of TaskExecutionGoalChecker check")
+        # logger.info("Goal flag explicitly reset to False at start of TaskExecutionGoalChecker check")
         
         check_if_goal_is_completed_prompt = TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
             task=robot_planner.task,
@@ -53,7 +53,7 @@ class TaskExecutionGoalChecker:
             plan=robot_planner.plan,
             tasks_completed=robot_planner.tasks_completed,
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-            robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
         )
         
         logger.debug("========================================")
@@ -101,7 +101,7 @@ class TaskPlannerGoalChecker:
         
         # Explicitly reset the flag at the start of each check
         # robot_planner.goal_completed = False
-        logger.info("Goal flag explicitly reset to False at start of TaskPlannerGoalChecker check")
+        # logger.info("Goal flag explicitly reset to False at start of TaskPlannerGoalChecker check")
         
         check_if_goal_is_completed_prompt = TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
         goal=robot_planner.goal,
@@ -109,7 +109,7 @@ class TaskPlannerGoalChecker:
         tasks_completed=robot_planner.tasks_completed,
         explanation=explanation,
         scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-        robot_position="Not available" if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+        robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
         )
         logger.debug("========================================")
         logger.debug(f"Goal checker prompt (task planner): {check_if_goal_is_completed_prompt}")

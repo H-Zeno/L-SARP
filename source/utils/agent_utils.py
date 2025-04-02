@@ -131,7 +131,7 @@ async def invoke_agent(
         arguments (KernelArguments, optional): Additional arguments to pass to the agent
         
     Returns:
-        tuple: (response content, updated thread)
+        tuple: (response content, updated thread, agent response logs)
     """
     logger.info("Agent %s Invoked.", agent.name)
     logger.debug("Exact message sent to agent: %s", input_text_message)

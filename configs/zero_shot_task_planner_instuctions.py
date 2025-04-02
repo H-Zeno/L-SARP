@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 
 TASK_PLANNER_AGENT_INSTRUCTIONS = """You are an expert task planner agent for the spot quadruped robot.
 It is your job to generate a detailed, sequential plan for spot to satisfy a user query or achieve a specific goal that is given.
@@ -48,10 +48,10 @@ Make sure that:
 
 class SceneGraphObject(BaseModel):
     """A node in the scene graph."""
-    object_id: int
-    sem_label: str
-    centroid: List[float]
-    movable: bool
+    sem_label: str = Field(description="The semantic label of the object.")
+    object_id: Optional[int] = Field(description="The id of the object in the scene graph.")
+    centroid: Optional[List[float]] = Field(description="The centroid of the object in the scene graph.")
+    movable: bool = Field(description="Whether the object is movable or not.")
 
 class TaskResponse(BaseModel):
     """A task to be completed."""
@@ -62,6 +62,6 @@ class TaskResponse(BaseModel):
 
 class TaskPlannerResponse(BaseModel):
     """A response from the task planner agent."""
-    tasks : List[TaskResponse]
+    tasks: List[TaskResponse]
 
-# Tge {model_description} is the description of the TaskPlannerResponse model defined above
+# The {model_description} is the description of the TaskPlannerResponse model defined above
