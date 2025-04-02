@@ -9,7 +9,7 @@ import copy
 from dotenv import dotenv_values
 import numpy as np
 from pathlib import Path
-from typing import Annotated, Optional, Set
+from typing import Annotated, Optional, Set, List
 from scipy.spatial.transform import Rotation
 
 # =============================================================================
@@ -331,22 +331,42 @@ class ItemInteractionsPlugin:
     @kernel_function(description="function to call to grasp a certain object", name="grasp_object")
     async def grasp_object(self, object_id: Annotated[int, "The ID of the object to grasp"]) -> None:
         if not use_robot:
-            logger.info(f"Grasped object with ID {object_id} in simulation (without robot).")
+            if robot_state.object_in_gripper is not None:
+                sem_label = robot_state.scene_graph.label_mapping.get(robot_state.object_in_gripper.sem_label)
+                logger.info(f"The robot is already holding an object ({sem_label} with ID {robot_state.object_in_gripper.object_id}). Please place the other object down first.")
+                return None
+            
             object_node = robot_state.scene_graph.nodes[object_id]
+            robot_state.object_in_gripper = object_node
             object_node.interactions_with_object.append("grasped object") # Log interaction
-            logger.info(f"Object interaction logged in the scene graph.")
+            logger.info(f"Grasped object with ID {object_id} in simulation (without robot).")
+            logger.info("Object interaction logged in the scene graph.")
             return None
         
         # TODO: Implement actual robot logic for grasping
         pass
 
     @kernel_function(description="function to call to place a certain object", name="place_object")
-    async def place_object(self, object_id: Annotated[int, "The ID of the object to place"]) -> None:
+    async def place_object(self, object_id: Annotated[int, "The ID of the object to place"], placing_3d_coordinates: Annotated[List[float], f"The coordinates of the location to place the object. The robot can only place an object at a location that is within {object_interaction_config['OBJECT_GRASP_DISTANCE']} of the robot's position."]) -> None:
         if not use_robot:
-            logger.info(f"Placed object with ID {object_id} in simulation (without robot).")
+            
+            if robot_state.object_in_gripper is None:
+                logger.info("The robot is not holding any object. Please grasp an object first.")
+                return None
+            
+            if not np.linalg.norm(placing_3d_coordinates - robot_state.virtual_robot_pose) < object_interaction_config["OBJECT_GRASP_DISTANCE"]:
+                logger.info(f"The object can only be placed at a location that is within {object_interaction_config['OBJECT_GRASP_DISTANCE']} of the robot's position.")
+                return None
+            
+            # Place the object at the new location (for now the same location as the robot just navigated to)
             object_node = robot_state.scene_graph.nodes[object_id]
+            robot_state.object_in_gripper = None
+            object_node.centroid = placing_3d_coordinates
+            
+            # Log the interaction
             object_node.interactions_with_object.append("placed object") # Log interaction
-            logger.info(f"Object interaction logged in the scene graph.")
+            logger.info(f"Placed object with ID {object_id} at location {placing_3d_coordinates}")
+            logger.info("Object interaction logged in the scene graph.")
             return None
         
         # TODO: Implement actual robot logic for placing

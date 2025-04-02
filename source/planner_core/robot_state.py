@@ -95,6 +95,11 @@ class RobotState:
             self.scene_graph = None
         
         self.current_room: str = "unknown" # Can be loaded from the scene configuration file
+        
+        # Gripper states
+        self.object_in_gripper = None
+        
+        # Viriables for in simulation
         self.virtual_robot_pose = None
         
     def set_image_state(self, image: np.ndarray) -> None:
