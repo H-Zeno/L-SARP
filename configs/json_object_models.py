@@ -1,11 +1,11 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 class SceneGraphObject(BaseModel):
     """A node in the scene graph."""
-    object_id: int
-    sem_label: str
-    centroid: List[float]
+    sem_label: str = Field(description="The semantic label of the object.")
+    object_id: Optional[int] = Field(description="The id of the object in the scene graph.")
+    centroid: Optional[List[float]] = Field(description="The centroid of the object in the scene graph.")
     movable: bool
 
 class TaskResponse(BaseModel):

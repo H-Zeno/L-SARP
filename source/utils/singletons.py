@@ -60,6 +60,15 @@ class _Singleton:
         if not self._is_instantiated:
             raise SingletonNotInstantiatedException("Singleton was never instantiated!")
         return getattr(self._instance, name)
+    
+    def __setattr__(self, name, value):
+        # Special attributes that belong to the _Singleton class
+        if name in ('_instance', '_type_of_class', '_is_instantiated', '_allow_overwrite'):
+            object.__setattr__(self, name, value)
+        else:
+            if not self._is_instantiated:
+                raise SingletonNotInstantiatedException("Singleton was never instantiated!")
+            setattr(self._instance, name, value)
 
 
 class _SingletonWrapper:
@@ -73,7 +82,14 @@ class _SingletonWrapper:
 
     def __getattr__(self, name):
         return getattr(self._instance, name)
-
+    
+    def __setattr__(self, name, value):
+        # Special attributes that belong to the _SingletonWrapper class
+        if name in ('_instance', '_type_of_class'):
+            object.__setattr__(self, name, value) # object.__setattr__ is the default implementation of __setattr__
+        else:
+            # Delegate all other attributes to the wrapped instance
+            setattr(self._instance, name, value)
 
 class RobotSingleton(_SingletonWrapper):
     _type_of_class = bosdyn.client.Robot

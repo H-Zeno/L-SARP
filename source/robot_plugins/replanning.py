@@ -118,7 +118,7 @@ class ReplanningPlugin:
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from response: {e}")
-            await robot_planner.update_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again.")
+            await self.update_task_plan("Failed to parse JSON from response with error: " + str(e) + ". Please try again with valid JSON format.")
         
         await robot_planner.planning_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content="Issue description with previous plan:" + issue_description))
         await robot_planner.planning_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content="Updated plan:" + str(robot_planner.plan)))

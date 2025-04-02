@@ -1,5 +1,5 @@
 {
-    "1": "Can you please navigate to the light switch directly and press it.",
-    "2": "Please inspect everything that could contain water in the room first, after which you should push the light switch.",
-    "3": "I need to water my plant."
+    "1": {"goal": "Can you please navigate to the light switch directly and press it.", "complexity": 1, "ambiguity": 1},
+    "2": {"goal": "Please inspect everything that could contain water in the room first, after which you should push the light switch.", "complexity": 2, "ambiguity": 2},
+    "3": {"goal": "I need to water my plant.", "complexity": 3, "ambiguity": 3}
 }

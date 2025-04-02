@@ -139,7 +139,7 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
 
 class TaskPlannerAgent(RobotAgentBase):
     """Agent responsible for planning tasks based on goals."""
-    service_id = "o3-mini"
+    service_id = config.get("robot_planner_settings", {}).get("task_planner_service_id", "")
 
     def __init__(self):
         kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=False)
@@ -166,7 +166,7 @@ class TaskPlannerAgent(RobotAgentBase):
 
 class TaskExecutionAgent(RobotAgentBase):
     """Agent responsible for executing tasks."""
-    service_id = "gpt4o"
+    service_id = config.get("robot_planner_settings", {}).get("task_execution_service_id", "")
 
     def __init__(self):
         kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=True)
@@ -189,7 +189,7 @@ class TaskExecutionAgent(RobotAgentBase):
 
 class GoalCompletionCheckerAgent(RobotAgentBase):
     """Agent responsible for checking if goals have been completed."""
-    service_id = "gpt4o"
+    service_id = config.get("robot_planner_settings", {}).get("goal_completion_checker_service_id", "")
     
     def __init__(self):
         kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, task_planner_communication=False)

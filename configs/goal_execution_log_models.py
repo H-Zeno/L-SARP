@@ -103,10 +103,13 @@ class GoalCompletionCheckerAgentLogs(BaseModel):
     completion_check_logs: List[GoalCompletionCheckerLogs]
     
 ########################################################
+
 class GoalExecutionLogs(BaseModel):
     """Logs for one goal execution."""
     goal: str
     goal_number: int
+    complexity: int
+    ambiguity: int
     dataset_name: Optional[str] = None
     start_time: datetime
     end_time: datetime

@@ -42,6 +42,10 @@ class TaskExecutionGoalChecker:
     async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why you think the goal is completed."]) -> str:
         """Check if the goal is completed."""
         
+        # Explicitly reset the flag at the start of each check
+        # robot_planner.goal_completed = False
+        logger.info("Goal flag explicitly reset to False at start of TaskExecutionGoalChecker check")
+        
         check_if_goal_is_completed_prompt = TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
             task=robot_planner.task,
             goal=robot_planner.goal,
@@ -69,11 +73,14 @@ class TaskExecutionGoalChecker:
         await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content=check_if_goal_is_completed_prompt))
         await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content=str(response)))
         
-        if termination_keyword.lower() in str(response).lower():
+        # Check for termination keyword and set flag if found
+        has_termination_keyword = termination_keyword.lower() in str(response).lower()
+        logger.info("Termination keyword '%s' found in response: %s", termination_keyword, has_termination_keyword)
+        
+        if has_termination_keyword:
             robot_planner.goal_completed = True
-            response = termination_keyword.lower()
-            logger.info("Goal completion flag set to True")
-            
+            logger.info("Goal completed flag set to True by TaskExecutionGoalChecker")
+        
         robot_planner.goal_completion_checker_logs.append(
             GoalCompletionCheckerLogs(
                 completion_check_requested_by_agent="TaskExecutionAgent",
@@ -91,6 +98,10 @@ class TaskPlannerGoalChecker:
     @kernel_function(description="Function to call when the task planner thinks that the goal is completed.")
     async def check_if_goal_is_completed(self, explanation: Annotated[str, "A detailed explanation of why the task planner thinks the goal is completed."]) -> str:
         """Check if the goal is completed."""
+        
+        # Explicitly reset the flag at the start of each check
+        # robot_planner.goal_completed = False
+        logger.info("Goal flag explicitly reset to False at start of TaskPlannerGoalChecker check")
         
         check_if_goal_is_completed_prompt = TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
         goal=robot_planner.goal,
@@ -114,10 +125,13 @@ class TaskPlannerGoalChecker:
         agent_response_logs.plan_id = robot_planner.replanning_count
         logger.info("Task planner goal completion checker response: %s", response)
         
-        if termination_keyword.lower() in str(response).lower():
+        # Check for termination keyword and set flag if found
+        has_termination_keyword = termination_keyword.lower() in str(response).lower()
+        logger.info("Termination keyword '%s' found in response: %s", termination_keyword, has_termination_keyword)
+        
+        if has_termination_keyword:
             robot_planner.goal_completed = True
-            response = termination_keyword.lower()
-            logger.info("Goal completion flag set to True")
+            logger.info("Goal completed flag set to True by TaskPlannerGoalChecker")
         
         robot_planner.goal_completion_checker_logs.append(
             GoalCompletionCheckerLogs(

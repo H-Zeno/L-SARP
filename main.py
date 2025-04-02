@@ -47,8 +47,6 @@ from configs.goal_execution_log_models import (
 
 
 # Initialize singletons
-robot_state = RobotStateSingleton()
-robot_planner = RobotPlannerSingleton()
 robot_lease_client = RobotLeaseClientSingleton()
 frame_transformer = FrameTransformerSingleton()
 
@@ -135,7 +133,7 @@ async def main():
     base_path = config.get_subpath("prescans")
     ending = config["pre_scanned_graphs"]["high_res"]
     scan_dir = os.path.join(base_path, ending)
-
+    
     # Loading/computing the scene graph
     scene_graph_path = Path(path_to_scene_data / active_scene_name / "full_scene_graph.pkl")
     scene_graph_json_path = Path(path_to_scene_data / active_scene_name / "scene_graph.json")
@@ -148,7 +146,7 @@ async def main():
         vis_block=False
     )
     origninal_scene_graph.save_as_json(scene_graph_json_path)
-
+    
     # Create timestamp for the responses file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     separator = "======================="
@@ -194,9 +192,11 @@ async def main():
         
         ### Offline Predefined Goals ###
         elif config["robot_planner_settings"]["task_instruction_mode"] == "offline_predefined_instruction":
-            # Process existing predefined goals
-            goals_path = Path("configs/goals.json")
             
+            # Process existing predefined goals
+            goals_path = Path(config["robot_planner_settings"]["goals_path"])
+            dataset_name = goals_path.stem
+                
             # Load the predefined goals
             if not goals_path.exists():
                 raise FileNotFoundError(f"Goals file not found at {goals_path}")
@@ -210,21 +210,18 @@ async def main():
             # Initialize the execution logs directory
             execution_logs_dir = Path(path_to_scene_data / active_scene_name)
             execution_logs_dir.mkdir(parents=True, exist_ok=True)
-            execution_logs_path = execution_logs_dir / f"execution_logs_{timestamp}.json"
+            execution_logs_path = execution_logs_dir / f"execution_logs_{dataset_name}_{timestamp}.json"
             
             # Process each goal
-            for nr, goal in goals.items():
+            for nr, goal_dict in goals.items():
+                goal = goal_dict["goal"]
+                complexity = goal_dict["complexity"]
+                ambiguity = goal_dict["ambiguity"]
                 
-                # Initialize a fresh robot planner instance for each goal
-                robot_planner.set_instance(RobotPlanner(
-                    task_planner_agent=TaskPlannerAgent(), 
-                    task_execution_agent=TaskExecutionAgent(), 
-                    goal_completion_checker_agent=GoalCompletionCheckerAgent(), 
-                    scene=active_scene))
-                
-                # Initialize the robot state with the scene graph
-                robot_state.set_instance(RobotState(scene_graph_object=origninal_scene_graph))
-        
+                # try: 
+
+
+                # Load the goal/query text
                 goal_text = f"{nr}. {goal}"
                 logger.info(separator)
                 logger.info(goal_text)
@@ -232,11 +229,36 @@ async def main():
                 # Loop for task execution and potential replanning
                 goal_start_time = datetime.now()
                 
-                # Set the goal and create the initial plan
+                # Reset the robot state
+                robot_state = RobotStateSingleton()
+                robot_state.set_instance(RobotState(scene_graph_object=origninal_scene_graph))
+        
+                # Reset the robot planner
+                robot_planner = RobotPlannerSingleton()
+                robot_planner.set_instance(RobotPlanner(
+                    task_planner_agent=TaskPlannerAgent(), 
+                    task_execution_agent=TaskExecutionAgent(), 
+                    goal_completion_checker_agent=GoalCompletionCheckerAgent(), 
+                    scene=active_scene))
                 await robot_planner.create_task_plan_from_goal(goal)
+                
+                # print all the attributes of the robot_planner
+                for attr in dir(robot_planner):
+                    logger.info(f"{attr}: {getattr(robot_planner, attr)}")
 
+                if robot_planner.goal_completed:
+                    raise ValueError("Goal marked as completed before starting to solve it!")
+                
+                # Begin of while loop: solving one specific goal
                 while True:
+                    
+                    # Reset the replanning flag
+                    robot_planner.replanned = False
+                    
+                    # Get the planned tasks
                     planned_tasks = robot_planner.plan["tasks"]
+                    
+                    # Execute each task
                     for task in planned_tasks:
                         
                         robot_planner.task = task
@@ -262,6 +284,7 @@ async def main():
                             input_image_message=robot_state.get_current_image_content()
                         )
                         
+                        # Log the task execution
                         robot_planner.task_execution_logs.append(
                             TaskExecutionLogs(
                                 task_description=task.get("task_description"),
@@ -270,33 +293,51 @@ async def main():
                                 agent_invocation=agent_response_logs,
                                 relevant_objects_identified_by_planner=[obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
                             ))
+                        
+                        if not robot_planner.replanned:
+                            # Now the completion of a task is seen as completing one task execution agent invocation
+                            robot_planner.task_execution_logs[-1].completed = True
+                            robot_planner.task_execution_logs[-1].agent_invocation.agent_invocation_end_time = datetime.now()
+                            robot_planner.tasks_completed.append(task.get("task_description"))
+                                
+                            # Reset the thread for the next task to ensure clean context
+                            robot_planner.task_execution_chat_thread = None
+                            
+                            # Check if the goal is completed
+                            if robot_planner.goal_completed:
+                                logger.info("Goal completed successfully!")
+                                break
 
-                        # Break out of the task execution loop when replanning
-                        if robot_planner.replanned:
-                            logger.info("The task planner decided to replan. Breaking out of the task execution loop.")
-                            robot_planner.replanned = False
+                        else:
+                            # Break out of the task execution loop when a replanning got invoked during the task executor's invocation
                             # When replanned, the task is not completed
+                            logger.info("The task planner decided to replan. Breaking out of the task execution loop.")
+                            break
+                    
+                    # Check if the goal is completed, this will set the robot_planner.goal_completed flag
+                    if not robot_planner.replanned:
+                        
+                        if robot_planner.goal_completed:
+                            logger.info("Goal completed, marked by the goal checker invoked by the task execution agent.")
                             break
                         
-                        # Now the completion of a task is seen as completing one task execution agent invocation
-                        # log the completion of the task (since no replanning took place)
-                        robot_planner.task_execution_logs[-1].completed = True
-                        robot_planner.task_execution_logs[-1].agent_invocation.agent_invocation_end_time = datetime.now()
-                        robot_planner.tasks_completed.append(task.get("task_description"))
-                        
-                        # Reset the thread for the next task to ensure clean context
-                        robot_planner.task_execution_chat_thread = None
-                        
-                    # Check if the goal is completed, this will set the robot_planner.goal_completed flag
-                    goal_completion_response = await TaskPlannerGoalChecker().check_if_goal_is_completed(explanation="All planned tasks seem to have been completed.")
-                    
-                    if robot_planner.goal_completed:
-                        logger.info("Goal completed successfully!")
-                        break
-                    
-                    else:
-                        logger.info("Goal is not completed yet. Replanning...")
-                        await ReplanningPlugin().update_task_plan(goal_completion_response)
+                        else: 
+                            # Check if the goal is completed after all planned tasks have been completed
+                            goal_completion_response = await TaskPlannerGoalChecker().check_if_goal_is_completed(explanation="All planned tasks seem to have been completed.")
+                            logger.info("Goal completion check after completing all planned tasks - goal_completed: %s", robot_planner.goal_completed)
+                            
+                            if robot_planner.goal_completed:
+                                # Goal is completed, we have to break out of the while loop
+                                logger.info("Goal completed successfully!")
+                                break
+                            
+                            else:
+                                logger.info("Goal is not completed yet. Replanning...")
+                                await ReplanningPlugin().update_task_plan(goal_completion_response)
+
+                            
+                            
+                # End of while loop
                         
                 # Goal Completed, save logging details.
                 goal_end_time = datetime.now()
@@ -327,6 +368,8 @@ async def main():
                 goal_execution_log = GoalExecutionLogs(
                     goal=goal,
                     goal_number=nr,
+                    complexity=complexity,
+                    ambiguity=ambiguity,
                     start_time=goal_start_time,
                     end_time=goal_end_time,
                     duration_seconds=goal_duration,
@@ -346,8 +389,25 @@ async def main():
                 
                 with open(execution_logs_path, 'w', encoding='utf-8') as file:
                     json.dump(existing_execution_logs, file, indent=2)
-                
 
+                
+                # except Exception as e:
+                #     logger.error("Error processing goal %s: %s", nr, e)
+                
+                #     # Save the error log
+                #     if execution_logs_path.exists():
+                #         with open(execution_logs_path, 'r') as file:
+                #             existing_execution_logs = json.load(file)
+                #     else:
+                #         existing_execution_logs = {}
+                            
+                #     existing_execution_logs[nr] = {
+                #         "error": str(e)
+                #     }
+                    
+                #     with open(execution_logs_path, 'w', encoding='utf-8') as file:
+                #         json.dump(existing_execution_logs, file, indent=2)
+                
             logger.info("Finished processing Offline Predefined Goals")
             
 
