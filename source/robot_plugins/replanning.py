@@ -1,7 +1,6 @@
 import logging
 import re
 import json
-from datetime import datetime
 from typing import Annotated
 
 from langchain.output_parsers import PydanticOutputParser
@@ -54,6 +53,7 @@ class ReplanningPlugin:
             planning_chat_history=planning_chat_history, 
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
             robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
+            core_memory=str(robot_state.core_memory),
             model_description=model_desc
         )
 

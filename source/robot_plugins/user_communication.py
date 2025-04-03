@@ -24,6 +24,7 @@ class CommunicationPlugin:
     def __init__(self):
         self.debug = True
         logger.info(f"CommunicationPlugin initialized")
+        
     def remove_unnecessary_characters(self, text: Annotated[str, "The text to clean"]) -> str:
         # Remove repeated exclamation marks, question marks, and other symbols
         text = re.sub(r'[!]+', r'!', text)
@@ -38,8 +39,6 @@ class CommunicationPlugin:
         while len(text) > 1 and text[-1] in [",", ".", " "]:
             text = text[:-1]
         return text
-
-    # Here the communication with the WhatsApp API should be implemented
 
     @kernel_function(description="Function used to inform the user about certain important events in the application process")
     async def inform_user(self, message: Annotated[str, "The message to inform the user about"]) -> str:

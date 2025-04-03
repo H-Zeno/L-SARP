@@ -3,39 +3,30 @@ from __future__ import annotations
 # =============================================================================
 # Standard Library Imports
 import logging
-import random
-import time
-import os
-import copy
-import numpy as np
-from typing import Annotated, List, Optional
+from typing import Annotated
 # =============================================================================
 # Robot Utilities
-from robot_utils.basic_movements import (
-    carry_arm, stow_arm, move_body, gaze, carry, move_arm
-)
-from robot_utils.advanced_movement import push_light_switch, turn_light_switch, move_body_distanced, push
-from robot_utils.video import (
-    localize_from_images, get_camera_rgbd, set_gripper_camera_params, set_gripper, relocalize,
-    frame_coordinate_from_depth_image, select_points_from_bounding_box
-)
+from robot_utils.basic_movements import (stow_arm, gaze, carry)
+from robot_utils.video import (get_camera_rgbd, set_gripper_camera_params)
 from robot_utils.base_LSARP import ControlFunction , take_control_with_function
+from robot_utils.frame_transformer import FrameTransformerSingleton
 
-from utils.pose_utils import calculate_light_switch_poses
+# Robot Plugins
+from robot_plugins.user_communication import CommunicationPlugin
+
+# Utils
 from utils.light_switch_interaction import LightSwitchDetection
-light_switch_detection = LightSwitchDetection()
-
-# =============================================================================
-# Custom Utilities
 from utils.recursive_config import Config
-from utils.coordinates import Pose2D, Pose3D, average_pose3Ds, pose_distanced
+from utils.coordinates import Pose3D
 
-from LostFound.src.graph_nodes import LightSwitchNode
+from planner_core.robot_state import RobotStateSingleton
+
+light_switch_detection = LightSwitchDetection()
+communication = CommunicationPlugin()
 
 # =============================================================================
 # Singletons
-from robot_utils.frame_transformer import FrameTransformerSingleton
-from planner_core.robot_state import RobotStateSingleton
+
 frame_transformer = FrameTransformerSingleton()
 robot_state = RobotStateSingleton()
 
@@ -45,17 +36,11 @@ from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
 # =============================================================================
 # Plugins
-from robot_plugins.communication import CommunicationPlugin
-communication = CommunicationPlugin()
 
 general_config = Config()
 logger = logging.getLogger("plugins")
-# Set debug level based on config
-debug = general_config.get("robot_planner_settings", {}).get("debug", True)
-if debug:
-    logger.setLevel(logging.DEBUG)
-use_robot = general_config["robot_planner_settings"]["use_with_robot"]
 
+use_robot = general_config["robot_planner_settings"]["use_with_robot"]
 
 class InspectionPlugin:
     """This plugin contains functions to inspect certain objects in the scene."""

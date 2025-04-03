@@ -53,7 +53,8 @@ class TaskExecutionGoalChecker:
             plan=robot_planner.plan,
             tasks_completed=robot_planner.tasks_completed,
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
+            core_memory=str(robot_state.core_memory)
         )
         
         logger.debug("========================================")
@@ -104,12 +105,13 @@ class TaskPlannerGoalChecker:
         # logger.info("Goal flag explicitly reset to False at start of TaskPlannerGoalChecker check")
         
         check_if_goal_is_completed_prompt = TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE.format(
-        goal=robot_planner.goal,
-        plan=robot_planner.plan,
-        tasks_completed=robot_planner.tasks_completed,
-        explanation=explanation,
-        scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-        robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+            goal=robot_planner.goal,
+            plan=robot_planner.plan,
+            tasks_completed=robot_planner.tasks_completed,
+            explanation=explanation,
+            scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
+            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
+            core_memory=str(robot_state.core_memory)
         )
         logger.debug("========================================")
         logger.debug(f"Goal checker prompt (task planner): {check_if_goal_is_completed_prompt}")

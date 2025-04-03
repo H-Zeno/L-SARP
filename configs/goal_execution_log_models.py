@@ -74,7 +74,7 @@ class TaskExecutionLogs(BaseModel):
     task_description: str
     reasoning: str
     plan_id: int # the id of the plan that this task belongs to
-    relevant_objects_identified_by_planner: List[str]
+    relevant_objects_identified_by_planner: Optional[List[str]] = None
     agent_invocation: AgentResponseLogs
     completed: bool = False
 
@@ -111,7 +111,6 @@ class GoalExecutionLogs(BaseModel):
     goal_completed: bool
     goal_failed_max_tries: bool
     complexity: int
-    ambiguity: int
     dataset_name: Optional[str] = None
     start_time: datetime
     end_time: datetime
@@ -121,4 +120,6 @@ class GoalExecutionLogs(BaseModel):
     goal_completion_checker_agent: GoalCompletionCheckerAgentLogs
 
     
-    
+class GoalExecutionLogsCollection(BaseModel):
+    """Collection of goal execution logs."""
+    goal_execution_logs: List[GoalExecutionLogs]

@@ -49,7 +49,7 @@ Make sure that:
 class SceneGraphObject(BaseModel):
     """A node in the scene graph."""
     sem_label: str = Field(description="The semantic label of the object.")
-    object_id: Optional[int] = Field(description="The id of the object in the scene graph.")
+    object_id: Optional[str] = Field(description="The id of the object in the scene graph.")
     centroid: Optional[List[float]] = Field(description="The centroid of the object in the scene graph.")
     movable: bool = Field(description="Whether the object is movable or not.")
 
