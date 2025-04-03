@@ -9,7 +9,11 @@ from dotenv import dotenv_values
 
 # Third-party imports
 from bosdyn import client as bosdyn_client
+from semantic_kernel import Kernel
 from semantic_kernel.agents import ChatHistoryAgentThread
+from semantic_kernel.contents import ChatHistory, ChatMessageContent, AuthorRole
+from semantic_kernel.exceptions import AgentThreadOperationException
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 
 from robot_utils.base_LSARP import (
     initialize_robot_connection,
@@ -32,6 +36,7 @@ from robot_plugins.goal_checker import TaskPlannerGoalChecker
 from configs.scenes_and_plugins_config import Scene
 from configs.agent_instruction_prompts import (
     TASK_EXECUTION_PROMPT_TEMPLATE,
+    HISTORY_SUMMARY_REDUCER_INSTRUCTIONS
 )
 from utils.agent_utils import invoke_agent
 from utils.recursive_config import Config
@@ -74,40 +79,59 @@ debug = config.get("robot_planner_settings", {}).get("debug", True)
 if debug:
     logger.setLevel(logging.DEBUG)
 
-# async def reduce_and_log_chat_history(chat_thread, thread_name):
-#     """Helper function to reduce chat history and log the results."""
-#     try:
-#         initial_messages = await chat_thread.get_messages()
-#         initial_count = len(initial_messages.messages)
-#         logger.info(f"@ {thread_name} History count BEFORE reduction attempt: {initial_count}") # Log count before
+summary_kernel = Kernel()
+summary_kernel.add_service(OpenAIChatCompletion(
+    service_id="small_cheap_model",
+    api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
+    ai_model_id="gpt-4o-mini"
+))
 
-#         is_reduced = await chat_thread.reduce()
-#         chat_history = await chat_thread.get_messages()
-#         final_count = len(chat_history.messages) # Get final count
 
-#         if is_reduced:
-#             # Use initial_count and final_count in the log message
-#             logger.info(f"@ {thread_name} History reduced from {initial_count} to {final_count} messages.")
-#             for msg in chat_history.messages:
-#                 if msg.metadata and msg.metadata.get("__summary__"):
-#                     logger.info(f"\t{thread_name} Summary: {msg.content}")
-#                     break # Assuming only one summary message needs logging
-#         else:
-#              # Log that history wasn't reduced and the count remains final_count
-#              logger.info(f"@ {thread_name} History not reduced. Count remains: {final_count}")
+# will only reduce every (threshold - untouched_messages - 1) messages
+async def reduce_and_log_chat_history(chat_thread, thread_name, threshold=10, untouched_messages=3):
+    """Helper function to reduce chat history and log the results."""
+    try:
+        initial_messages = await chat_thread.get_messages()
+        initial_count = len(initial_messages.messages)
+        
+        if initial_count <= threshold:
+            logger.info(f"@ {thread_name} History count count is below threshold of {threshold}: {initial_count}")
+            return
+        
+        logger.info("History count above threshold, attempting to reduce...")
+        logger.info(f"@ {thread_name} History count BEFORE reduction attempt: {initial_count}") # Log count before
+        # logger.info(f"@ {thread_name} History (Before): {initial_messages.messages}")
+        
+        # Summarize all messages except the last 'untouched_messages'
+        prompt = HISTORY_SUMMARY_REDUCER_INSTRUCTIONS.format(chat_history=initial_messages.messages[:-untouched_messages])
+        summary_result = await summary_kernel.invoke_prompt(prompt) # Added await
+        summary_content = str(summary_result) # Extract string content from the result
+        logger.info(f"@ {thread_name} Summary: {summary_content}")
+  
+        # Create the new chat history: summary + newest untouched messages
+        chat_history = ChatHistory()
+        chat_history.add_message(ChatMessageContent(role=AuthorRole.USER, content=summary_content)) # Add summary as system message
+        
+        for msg in initial_messages.messages[-untouched_messages:]:
+            chat_history.add_message(msg)
+        
+        # Restore logging for reduction status
+        final_count = len(chat_history.messages)
 
-#         # Log final count using the variable
-#         logger.info(f"@ {thread_name} Final Message Count: {final_count}\n") 
-#     except AgentThreadOperationException:
-#         logger.warning(f"Could not reduce chat history for {thread_name} as the thread is not active.")
-#         # Optionally, still log the current message count if the thread object allows access
-#         try:
-#             chat_history = await chat_thread.get_messages()
-#             # Use final_count variable here too if needed, or recalculate
-#             final_count_except = len(chat_history.messages)
-#             logger.info(f"@ {thread_name} Final Message Count (reduction skipped): {final_count_except}\n")
-#         except Exception as e:
-#             logger.warning(f"Could not retrieve messages for {thread_name} after failed reduction: {e}")
+        logger.info(f"@ {thread_name} Final Message Count AFTER reduction: {final_count}")
+        
+        chat_thread._chat_history = chat_history
+        
+    except AgentThreadOperationException:
+        logger.warning(f"Could not reduce chat history for {thread_name} as the thread is not active.")
+        # Optionally, still log the current message count if the thread object allows access
+        try:
+            chat_history = await chat_thread.get_messages()
+            # Use final_count variable here too if needed, or recalculate
+            final_count_except = len(chat_history.messages)
+            logger.info(f"@ {thread_name} Final Message Count (reduction skipped): {final_count_except}\n")
+        except Exception as e:
+            logger.warning(f"Could not retrieve messages for {thread_name} after failed reduction: {e}")
 
 async def main():
     """Main entry point for the robot control system.
@@ -142,7 +166,7 @@ async def main():
     origninal_scene_graph = get_scene_graph(
         scan_dir,
         graph_save_path=scene_graph_path,
-        drawers=False,
+        drawers=True,
         light_switches=True,
         vis_block=False
     )
@@ -217,7 +241,6 @@ async def main():
             for nr, goal_dict in goals.items():
                 goal = goal_dict["goal"]
                 complexity = goal_dict["complexity"]
-                ambiguity = goal_dict["ambiguity"]
                 
                 try: 
 
@@ -277,7 +300,8 @@ async def main():
                                 plan=robot_planner.plan,
                                 tasks_completed=robot_planner.tasks_completed,
                                 scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
-                                robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+                                robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
+                                core_memory=str(robot_state.core_memory)
                             )
                             
                             # Execute the task using thread-based approach for better context management
@@ -288,6 +312,11 @@ async def main():
                                 input_image_message=robot_state.get_current_image_content()
                             )
                             
+                            if task.get("relevant_objects") is not None:
+                                relevant_objects_identified_by_planner = [obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
+                            else:
+                                relevant_objects_identified_by_planner = None
+                            
                             # Log the task execution
                             robot_planner.task_execution_logs.append(
                                 TaskExecutionLogs(
@@ -295,7 +324,7 @@ async def main():
                                     reasoning=task.get("reasoning", ""),
                                     plan_id=robot_planner.replanning_count,
                                     agent_invocation=agent_response_logs,
-                                    relevant_objects_identified_by_planner=[obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
+                                    relevant_objects_identified_by_planner=relevant_objects_identified_by_planner
                                 ))
                             
                             if not robot_planner.replanned:
@@ -304,8 +333,8 @@ async def main():
                                 robot_planner.task_execution_logs[-1].agent_invocation.agent_invocation_end_time = datetime.now()
                                 robot_planner.tasks_completed.append(task.get("task_description"))
                                     
-                                # Reset the thread for the next task to ensure clean context
-                                robot_planner.task_execution_chat_thread = ChatHistoryAgentThread()
+                                # Reduce the chat history
+                                await reduce_and_log_chat_history(robot_planner.task_execution_chat_thread, "Task Execution Agent")
                                 
                                 # Check if the goal is completed
                                 if robot_planner.goal_completed:
@@ -373,7 +402,6 @@ async def main():
                         goal_completed=robot_planner.goal_completed,
                         goal_failed_max_tries=robot_planner.goal_failed_max_tries,
                         complexity=complexity,
-                        ambiguity=ambiguity,
                         start_time=goal_start_time,
                         end_time=goal_end_time,
                         duration_seconds=goal_duration,

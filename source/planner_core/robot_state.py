@@ -99,8 +99,11 @@ class RobotState:
         # Gripper states
         self.object_in_gripper = None
         
-        # Viriables for in simulation
+        # Variables for in simulation
         self.virtual_robot_pose = None
+        
+        # Core memory
+        self.core_memory = dict()
         
     def set_image_state(self, image: np.ndarray) -> None:
         """Set the current image state."""

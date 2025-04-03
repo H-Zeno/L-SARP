@@ -23,16 +23,17 @@ from semantic_kernel.functions import KernelArguments
 from configs.agent_instruction_prompts import (
     GOAL_COMPLETION_CHECKER_AGENT_INSTRUCTIONS,
     TASK_EXECUTION_AGENT_INSTRUCTIONS,
-    TASK_PLANNER_AGENT_INSTRUCTIONS,
+    TASK_PLANNER_AGENT_INSTRUCTIONS
 )
 from robot_plugins.inspection import InspectionPlugin
 from robot_plugins.item_interactions import ItemInteractionsPlugin
 from robot_plugins.navigation import NavigationPlugin
 from robot_plugins.task_planner_communication import TaskPlannerCommunicationPlugin
 from robot_plugins.goal_checker import TaskPlannerGoalChecker, TaskExecutionGoalChecker
-from utils.recursive_config import Config
-
+from robot_plugins.maths import MathematicalOperationsPlugin
 from robot_plugins.replanning import ReplanningPlugin
+from robot_plugins.core_memory import CoreMemoryPlugin
+from utils.recursive_config import Config
 
 
 # Initialize logger
@@ -77,7 +78,7 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
         
         return kernel
     
-    def _create_kernel(self, action_plugins=False, retrieval_plugins=False, task_planner_communication=False) -> Kernel:
+    def _create_kernel(self, action_plugins=False, retrieval_plugins=False, task_planner_communication=False, do_maths=False, core_memory=False) -> Kernel:
         """Create and configure a kernel with all the AI services that we support."""
         logger.info(f"Creating kernel with service ID: {self.service_id}")
         kernel = Kernel()
@@ -134,6 +135,12 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
         if task_planner_communication:
             kernel.add_plugin(TaskPlannerCommunicationPlugin(), plugin_name="task_planner_communication")
             
+        if do_maths:
+            kernel.add_plugin(MathematicalOperationsPlugin(), plugin_name="mathematical_operations")
+        
+        if core_memory:
+            kernel.add_plugin(CoreMemoryPlugin(), plugin_name="core_memory")
+        
         return kernel
     
 
@@ -142,7 +149,7 @@ class TaskPlannerAgent(RobotAgentBase):
     service_id = config.get("robot_planner_settings", {}).get("task_planner_service_id", "")
 
     def __init__(self):
-        kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=False)
+        kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=False, do_maths=True, core_memory=True)
         
         # Add the goal completion checker plugin
         kernel.add_plugin(TaskPlannerGoalChecker(), plugin_name="goal_checker")
@@ -169,7 +176,7 @@ class TaskExecutionAgent(RobotAgentBase):
     service_id = config.get("robot_planner_settings", {}).get("task_execution_service_id", "")
 
     def __init__(self):
-        kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=True)
+        kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=True, do_maths=True, core_memory=True)
         
         # Add the goal completion checker plugin
         kernel.add_plugin(TaskExecutionGoalChecker(), plugin_name="goal_checker")
@@ -192,7 +199,7 @@ class GoalCompletionCheckerAgent(RobotAgentBase):
     service_id = config.get("robot_planner_settings", {}).get("goal_completion_checker_service_id", "")
     
     def __init__(self):
-        kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, task_planner_communication=False)
+        kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, task_planner_communication=False, do_maths=True)
         
         settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
         settings.function_choice_behavior = FunctionChoiceBehavior.Auto()

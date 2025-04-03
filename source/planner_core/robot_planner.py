@@ -11,7 +11,7 @@ from dotenv import dotenv_values
 from langchain.output_parsers import PydanticOutputParser
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.agents import ChatHistoryAgentThread
-from semantic_kernel.contents import ChatMessageContent, ChatHistorySummarizationReducer
+from semantic_kernel.contents import ChatMessageContent, ChatHistorySummarizationReducer, ChatHistoryTruncationReducer
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 
@@ -60,10 +60,11 @@ class RobotPlanner:
         self.task_planner_agent = task_planner_agent
         self.task_execution_agent = task_execution_agent
         self.goal_completion_checker_agent = goal_completion_checker_agent
-
+        
         # Planner states
         self.goal = None
         self.goal_completed = False
+        self.goal_failed_max_tries = False
         self.plan = None
         self.replanned = False
         self.task = None
@@ -87,27 +88,6 @@ class RobotPlanner:
         self.planning_chat_thread = ChatHistoryAgentThread()
         self.task_execution_chat_thread = ChatHistoryAgentThread()
         
-        # # Set up chat history reducer parameters
-        # reducer_msg_count = 3
-        # reducer_threshold = 3
-        # reducer_service = OpenAIChatCompletion(
-        #     service_id="gpt4o",
-        #     api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
-        #     ai_model_id="gpt-4o-2024-05-13"
-        # )
-        
-        # # Chat history threads (with separate history reducers)
-        # planning_history_reducer = ChatHistorySummarizationReducer(
-        #     service=reducer_service,
-        #     target_count=reducer_msg_count, 
-        #     threshold_count=reducer_threshold
-        # )
-        
-        # task_execution_history_reducer = ChatHistorySummarizationReducer(
-        #     service=reducer_service,
-        #     target_count=reducer_msg_count,
-        #     threshold_count=reducer_threshold
-        # )
         
     async def _create_task_plan(self, additional_message: Annotated[str, "Additional message to add to the task generation prompt"] = "") -> str:
         """Create a task plan based on the current goal and robot state."""
@@ -118,7 +98,8 @@ class RobotPlanner:
             goal=self.goal, 
             model_description=model_desc,
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()), 
-            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name))
+            robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
+            core_memory=str(robot_state.core_memory)
         )
 
         logger.debug("========================================")
@@ -178,6 +159,8 @@ class RobotPlanner:
                 chain_of_thought=chain_of_thought
             )
             
+            
+            
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from response: {e}")
             await self._create_task_plan(additional_message="Failed to parse JSON from response with error: " + str(e) + ". Please try again.")
@@ -204,31 +187,31 @@ class RobotPlanner:
 
         self.goal = goal
         
-        # Planner states
-        self.goal_completed = False
-        self.goal_failed_max_tries = False
-        self.plan = None
-        self.replanned = False
-        self.task = None
-        self.tasks_completed = []
+        # # Planner states
+        # self.goal_completed = False
+        # self.goal_failed_max_tries = False
+        # self.plan = None
+        # self.replanned = False
+        # self.task = None
+        # self.tasks_completed = []
         
-        # Planner log states
-        self.initial_plan_log = None
-        self.plan_generation_logs = []
-        self.replanning_count = 0
-        self.max_replanning_count = config.get("robot_planner_settings", {}).get("max_replanning_count", 3)
-        self.task_planner_invocations = []
+        # # Planner log states
+        # self.initial_plan_log = None
+        # self.plan_generation_logs = []
+        # self.replanning_count = 0
+        # self.max_replanning_count = config.get("robot_planner_settings", {}).get("max_replanning_count", 3)
+        # self.task_planner_invocations = []
         
-        # Task execution logs   
-        self.task_execution_logs = []
+        # # Task execution logs   
+        # self.task_execution_logs = []
         
-        # Goal completion checker logs
-        self.goal_completion_checker_logs = []
+        # # Goal completion checker logs
+        # self.goal_completion_checker_logs = []
         
-        # Initialize chat history threads
-        self.json_format_agent_thread = None # Also reset agent used specifically for plan creation format
-        self.planning_chat_thread = ChatHistoryAgentThread()
-        self.task_execution_chat_thread = ChatHistoryAgentThread()
+        # # Initialize chat history threads
+        # self.json_format_agent_thread = None # Also reset agent used specifically for plan creation format
+        # self.planning_chat_thread = ChatHistoryAgentThread()
+        # self.task_execution_chat_thread = ChatHistoryAgentThread()
         
         # Create initial plan for the new goal
         chain_of_thought = await self._create_task_plan()
