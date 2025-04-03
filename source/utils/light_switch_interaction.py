@@ -465,8 +465,3 @@ class LightSwitchInteraction:
 
 
 
-
-if __name__ == "__main__":
-
-    data_path = "/home/cvg-robotics/tim_ws/data_switch_detection/20240706_test/data.yaml"
-    LightSwitchDetection.validate_light_switches(data_path=data_path, model_type="yolov8")

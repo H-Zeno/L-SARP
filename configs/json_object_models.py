@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Literal
 from pydantic import BaseModel, Field
 
 class SceneGraphObject(BaseModel):
@@ -18,3 +18,20 @@ class TaskResponse(BaseModel):
 class TaskPlannerResponse(BaseModel):
     """A response from the task planner agent."""
     tasks: List[TaskResponse] 
+
+class LightSwitchAffordance(BaseModel):
+    """An affordance dictionary for light switches."""
+    button_type: Literal["push button switch", "rotating switch", "none"] = Field(
+        description="The type of button on the light switch."
+    )
+    button_count: Literal["single", "double", "none"] = Field(
+        description="The number of buttons on the light switch."
+    )
+    button_position: Literal["buttons stacked vertically", "buttons side-by-side", "none"] = Field(
+        alias="button position (wrt. other button!)",
+        description="The position of buttons relative to each other on the light switch."
+    )
+    interaction_inference: Literal["top/bot push", "left/right push", "center push", "no symbols present"] = Field(
+        alias="interaction inference from symbols",
+        description="The inferred interaction method based on symbols or markings on the light switch."
+    ) 

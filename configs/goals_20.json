@@ -1,10 +1,10 @@
-{
+{   "4": {"goal": "Turn the highest light switch on and off.", "complexity": 2},
     "5": {"goal": "Move the object nearest to the light switch .", "complexity": 3},
     "11": {"goal": "Inspect all drawers in the room, ordered from highest to lowest position. Identify and report which drawer contains an object that seems out of place compared to the others in that drawer.", "complexity": 6},
     "1": {"goal": "Go to the biggest tv.", "complexity": 1},
     "2": {"goal": "Navigate to the table near the couch.", "complexity": 2},
     "3": {"goal": "Place an object in the recycling bin.", "complexity": 2},
-    "4": {"goal": "Turn the light switch on and off.", "complexity": 2},
+    
 
 
     "6": {"goal": "Navigate to each piece of furniture in the room, starting with the closest one.", "complexity": 4},
