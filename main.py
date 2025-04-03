@@ -140,10 +140,6 @@ async def main():
     
     # Use the context manager
     with context_manager:
-        
-        if use_robot:
-            power_on()
-            spot_initial_localization()
 
         ### Online Live Instruction ###
         if config["robot_planner_settings"]["task_instruction_mode"] == "online_live_instruction":
@@ -198,6 +194,10 @@ async def main():
                 robot_state = RobotStateSingleton()
                 robot_state.set_instance(RobotState(scene_graph_object=origninal_scene_graph))
         
+                if use_robot:
+                    power_on()
+                    spot_initial_localization()
+
                 # Reset the robot planner
                 robot_planner = RobotPlannerSingleton()
                 robot_planner.set_instance(RobotPlanner(
@@ -239,7 +239,6 @@ async def main():
                         # Format the task execution prompt
                         task_execution_prompt = TASK_EXECUTION_PROMPT_TEMPLATE.format(
                             task=task,
-                            goal=goal,
                             plan=robot_planner.plan,
                             tasks_completed=robot_planner.tasks_completed,
                             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
@@ -255,12 +254,11 @@ async def main():
                             input_image_message=robot_state.get_current_image_content()
                         )
                         
-                        # if task.get("relevant_objects") is not None:
-                        #     relevant_objects_identified_by_planner = [obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
-                        # else:
-                        #     relevant_objects_identified_by_planner = None
+                        if task.get("relevant_objects") is not None:
+                            relevant_objects_identified_by_planner = [obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
+                        else:
+                            relevant_objects_identified_by_planner = None
                         
-                        relevant_objects_identified_by_planner = None
                         # Log the task execution
                         robot_planner.task_execution_logs.append(
                             TaskExecutionLogs(

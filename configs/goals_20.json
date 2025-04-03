@@ -6,7 +6,7 @@
 
     "2": {"goal": "Navigate to the table near the couch.", "complexity": 2},
     "3": {"goal": "Place an object in the recycling bin.", "complexity": 2},
-    "4": {"goal": "Turn the light switch on and off.", "complexity": 2},
+    
 
 
     "7": {"goal": "Turn on a light switch and then inspect the lamp positioned closest to this light switch.", "complexity": 4},

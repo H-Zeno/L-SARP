@@ -44,11 +44,8 @@ from random import uniform
 # Semantic Kernel
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
-
 from robot_plugins.user_communication import CommunicationPlugin
 communication = CommunicationPlugin()
-
-import logging
 
 logger = logging.getLogger("plugins")
 

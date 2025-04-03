@@ -41,6 +41,7 @@ from utils.recursive_config import Config
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
 from planner_core.robot_state import RobotStateSingleton
+from robot_utils.advanced_movement import positional_grab
 
 robot_state = RobotStateSingleton()
 frame_transformer = FrameTransformerSingleton()
@@ -122,22 +123,27 @@ class ItemInteractionsPlugin:
                 num_refinement_max_tries=config["NUM_REFINEMENTS_MAX_TRIES"],
                 bounding_box_optimization=True
             )
-            
-            #################################
-            # affordance detection
-            #################################
-            logger.info("affordance detection starting...")
-            affordance_dict = self.light_switch_detection.light_switch_affordance_detection(
-                refined_box, color_response, 
-                config["AFFORDANCE_DICT_LIGHT_SWITCHES"], planner_settings.get("OPENAI_API_KEY")
-            )
+            if light_switch_node.affordance_dict is not None:
+                affordance_dict = light_switch_node.affordance_dict
+            else:
+                #################################
+                # affordance detection
+                #################################
+                logger.info("affordance detection starting...")
+                affordance_dict = self.light_switch_interaction.light_switch_affordance_detection(
+                    refined_box, color_response, 
+                    config["AFFORDANCE_DICT_LIGHT_SWITCHES"], planner_settings.get("OPENAI_API_KEY")
+                )
 
             #################################
             #  light switch interaction based on affordance
             #################################
+            logger.info("Determining switch offsets and type...")
             offsets, switch_type = self.light_switch_interaction.determine_switch_offsets_and_type(
                 affordance_dict, config["GRIPPER_HEIGHT"], config["GRIPPER_WIDTH"]
             )
+
+            logger.info("Actually pressing the light switch now...")
             self.light_switch_interaction.switch_interaction(
                 switch_type, refined_pose, offsets, robot_state.frame_name, config["FORCES"]
             )
@@ -251,72 +257,7 @@ class ItemInteractionsPlugin:
     # @kernel_function(description="function to call to pick up a certain object", name="pick_up_object")
     # async def pick_up_object(self, object_id: Annotated[int, "The ID of the object to pick up"]) -> None:
         
-    #     object_node = robot_state.scene_graph.nodes[object_id]
-    #     object_coordinates = Pose3D(object_node.centroid)
-    #     sem_label = robot_state.scene_graph.label_mapping.get(object_node.sem_label, "object")
-        
-    #     mask_path = general_config.get_subpath("prescans")
-    #     ending = general_config["pre_scanned_graphs"]["high_res"]
-    #     mask_path = os.path.join(mask_path, ending)
 
-    #     pc_path = general_config.get_subpath("aligned_point_clouds")
-    #     ending = general_config["pre_scanned_graphs"]["high_res"]
-    #     pc_path = os.path.join(str(pc_path), ending, "scene.ply")
-
-    #     instance_index = 0 
-    #     item_cloud, environment_cloud = get_coordinates_from_item(
-    #         sem_label, mask_path, pc_path, instance_index
-    #     )
-    #     lim_env_cloud = get_radius_env_cloud(item_cloud, environment_cloud, 0.5)
-
-    #     logger.info("Starting body planning.")
-    #     robot_target = body_planning(
-    #         environment_cloud, object_coordinates, min_distance=0.65, max_distance=0.65
-    #     )[0]
-
-    #     logger.info("Starting graspnet request.")
-    #     tf_matrix, _ = graspnet_interface.predict_full_grasp(
-    #         item_cloud,
-    #         lim_env_cloud,
-    #         general_config,
-    #         logger,
-    #         rotation_resolution=16,
-    #         top_n=2,
-    #         vis_block=False,
-    #     )
-
-    #     direction = object_coordinates.coordinates - robot_target.coordinates
-    #     robot_target.set_rot_from_direction(direction)
-
-    #     move_body(
-    #         robot_target.to_dimension(2),
-    #         robot_state.frame_name,
-    #     )
-
-    #     ###############################################################################
-    #     ################################ ARM COMMANDS #################################
-    #     ###############################################################################
-
-    #     grasp_pose = Pose3D.from_matrix(tf_matrix)
-    #     carry_arm(True)
-    #     # unstow_arm(robot, robot_command_client, True)
-
-    #     # correct tf_matrix, we need to rotate by 90 degrees
-    #     correct_roll_matrix = Rotation.from_euler(
-    #         "xyz", (-90, 0, 0), degrees=True
-    #     ).as_matrix()
-    #     roll = Pose3D(rot_matrix=correct_roll_matrix)
-    #     grasp_pose = grasp_pose @ roll
-
-    #     positional_grab(
-    #         grasp_pose,
-    #         0.1,
-    #         -0.05,
-    #         robot_state.frame_name,
-    #         already_gripping=False,
-    #     )
-
-    #     carry_arm()
         
         
     @kernel_function(description="function to call to grasp a certain object", name="grasp_object")
@@ -342,7 +283,64 @@ class ItemInteractionsPlugin:
             return feedback
         
         # TODO: Implement actual robot logic for grasping
-        pass
+        object_node = robot_state.scene_graph.nodes[object_id]
+        object_coordinates = Pose3D(object_node.centroid)
+        sem_label = robot_state.scene_graph.label_mapping.get(object_node.sem_label, "object")
+        
+        mask_path = general_config.get_subpath("prescans")
+        ending = general_config["pre_scanned_graphs"]["high_res"]
+        mask_path = os.path.join(mask_path, ending)
+
+        pc_path = general_config.get_subpath("aligned_point_clouds")
+        ending = general_config["pre_scanned_graphs"]["high_res"]
+        pc_path = os.path.join(str(pc_path), ending, "scene.ply")
+
+        instance_index = 0 
+        item_cloud, environment_cloud = get_coordinates_from_item(
+            sem_label, mask_path, pc_path, instance_index
+        )
+        lim_env_cloud = get_radius_env_cloud(item_cloud, environment_cloud, 0.5)
+
+        logger.info("Starting graspnet request.")
+        tf_matrix, widths, scores = graspnet_interface.predict_full_grasp(
+            item_cloud,
+            lim_env_cloud,
+            general_config,
+            logger,
+            rotation_resolution=16,
+            top_n=2,
+            vis_block=False,
+        )
+
+        # best_grasp_idx = np.argmax(scores)
+        # tf_matrix = tf_matrix[best_grasp_idx]
+        # width = widths[best_grasp_idx]
+
+        ###############################################################################
+        ################################ ARM COMMANDS #################################
+        ###############################################################################
+
+        grasp_pose = Pose3D.from_matrix(tf_matrix)
+        carry_arm(True)
+        # unstow_arm(robot, robot_command_client, True)
+
+        # correct tf_matrix, we need to rotate by 90 degrees
+        correct_roll_matrix = Rotation.from_euler(
+            "xyz", (-90, 0, 0), degrees=True
+        ).as_matrix()
+        roll = Pose3D(rot_matrix=correct_roll_matrix)
+        grasp_pose = grasp_pose @ roll
+
+        positional_grab(
+            grasp_pose,
+            0.1,
+            -0.05,
+            robot_state.frame_name,
+            already_gripping=False,
+        )
+
+        carry_arm()
+
 
     @kernel_function(description="Function to call to place a certain object somewhere. Before placing an object at a location, the robot should have navigated to the location first.", name="place_object")
     async def place_object(self,

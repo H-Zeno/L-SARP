@@ -38,14 +38,13 @@ from semantic_kernel.functions.kernel_function_decorator import kernel_function
 # Plugins
 
 general_config = Config()
+object_interaction_config = Config("object_interaction_configs")
 logger = logging.getLogger("plugins")
 
 use_robot = general_config["robot_planner_settings"]["use_with_robot"]
 
 class InspectionPlugin:
     """This plugin contains functions to inspect certain objects in the scene."""
-    global object_interaction_config
-    object_interaction_config = Config("object_interaction_configs")
     
     class _Inspect_Object_With_Gaze(ControlFunction):
         def __init__(self):
@@ -151,7 +150,19 @@ class InspectionPlugin:
             )
             logger.info(f"Completed inspecting of object with id {object_id} and centroid {centroid_pose} successfully (including saving to robot state).")
             object_node = robot_state.scene_graph.nodes[object_id]
-            object_node.interactions_with_object.append("inspected") # Log interaction
+
+            # Log interaction
+            object_node.interactions_with_object.append("inspected") 
+            sem_label = robot_state.scene_graph.label_mapping.get(object_node.sem_label, "light switch")
+
+            if sem_label == "light switch":
+                object_node.affordance_dict = light_switch_detection.light_switch_affordance_detection(
+                    object_node.centroid, 
+                    robot_state.image_state, 
+                    object_interaction_config["AFFORDANCE_DICT_LIGHT_SWITCHES"], 
+                    general_config["OPENAI_API_KEY"]
+                )
+
             logger.info(f"Object inspection logged in the scene graph.")
         
         else:
