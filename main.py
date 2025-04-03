@@ -10,9 +10,6 @@ from dotenv import dotenv_values
 # Third-party imports
 from bosdyn import client as bosdyn_client
 from semantic_kernel import Kernel
-from semantic_kernel.agents import ChatHistoryAgentThread
-from semantic_kernel.contents import ChatHistory, ChatMessageContent, AuthorRole
-from semantic_kernel.exceptions import AgentThreadOperationException
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 
 from robot_utils.base_LSARP import (
@@ -26,6 +23,7 @@ from robot_utils.frame_transformer import FrameTransformerSingleton
 from planner_core.robot_planner import RobotPlanner, RobotPlannerSingleton
 from planner_core.robot_state import RobotState, RobotStateSingleton
 from planner_core.agents import TaskPlannerAgent, TaskExecutionAgent, GoalCompletionCheckerAgent
+from planner_core.reduce_history import reduce_and_log_chat_history
 
 from LostFound.src.scene_graph import get_scene_graph
 
@@ -79,59 +77,6 @@ debug = config.get("robot_planner_settings", {}).get("debug", True)
 if debug:
     logger.setLevel(logging.DEBUG)
 
-summary_kernel = Kernel()
-summary_kernel.add_service(OpenAIChatCompletion(
-    service_id="small_cheap_model",
-    api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
-    ai_model_id="gpt-4o-mini"
-))
-
-
-# will only reduce every (threshold - untouched_messages - 1) messages
-async def reduce_and_log_chat_history(chat_thread, thread_name, threshold=10, untouched_messages=3):
-    """Helper function to reduce chat history and log the results."""
-    try:
-        initial_messages = await chat_thread.get_messages()
-        initial_count = len(initial_messages.messages)
-        
-        if initial_count <= threshold:
-            logger.info(f"@ {thread_name} History count count is below threshold of {threshold}: {initial_count}")
-            return
-        
-        logger.info("History count above threshold, attempting to reduce...")
-        logger.info(f"@ {thread_name} History count BEFORE reduction attempt: {initial_count}") # Log count before
-        # logger.info(f"@ {thread_name} History (Before): {initial_messages.messages}")
-        
-        # Summarize all messages except the last 'untouched_messages'
-        prompt = HISTORY_SUMMARY_REDUCER_INSTRUCTIONS.format(chat_history=initial_messages.messages[:-untouched_messages])
-        summary_result = await summary_kernel.invoke_prompt(prompt) # Added await
-        summary_content = str(summary_result) # Extract string content from the result
-        logger.info(f"@ {thread_name} Summary: {summary_content}")
-  
-        # Create the new chat history: summary + newest untouched messages
-        chat_history = ChatHistory()
-        chat_history.add_message(ChatMessageContent(role=AuthorRole.USER, content=summary_content)) # Add summary as system message
-        
-        for msg in initial_messages.messages[-untouched_messages:]:
-            chat_history.add_message(msg)
-        
-        # Restore logging for reduction status
-        final_count = len(chat_history.messages)
-
-        logger.info(f"@ {thread_name} Final Message Count AFTER reduction: {final_count}")
-        
-        chat_thread._chat_history = chat_history
-        
-    except AgentThreadOperationException:
-        logger.warning(f"Could not reduce chat history for {thread_name} as the thread is not active.")
-        # Optionally, still log the current message count if the thread object allows access
-        try:
-            chat_history = await chat_thread.get_messages()
-            # Use final_count variable here too if needed, or recalculate
-            final_count_except = len(chat_history.messages)
-            logger.info(f"@ {thread_name} Final Message Count (reduction skipped): {final_count_except}\n")
-        except Exception as e:
-            logger.warning(f"Could not retrieve messages for {thread_name} after failed reduction: {e}")
 
 async def main():
     """Main entry point for the robot control system.

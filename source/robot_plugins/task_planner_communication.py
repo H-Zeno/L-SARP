@@ -48,11 +48,11 @@ class TaskPlannerCommunicationPlugin:
         robot_planner.task_planner_invocations.append(agent_response_logs)
         
         # Add to the task execution chat history
-        await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content=request))
-        await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content=str(response)))
+        # await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content=request))
+        # await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content="The Task Planner has completed its analysis and here is its response to your query: " + str(response)))
         
         logger.info("========================================")
         logger.info(f"Task planner response to communication request: {response}")
         logger.info("========================================")
         
-        return None
+        return str(response)

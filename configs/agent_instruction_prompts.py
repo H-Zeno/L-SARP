@@ -212,15 +212,16 @@ HISTORY_SUMMARY_REDUCER_INSTRUCTIONS = """You are an expert history summary redu
 You will be given a chat history.
 
 Your job is to reduce the chat history to a summary of core information.
-An outside observer should be able to clearly understand what happened based on the summary.
+An outside observer should be able to use this information as part of a larger plan to achieve the following goal: {goal}
+
+This is the plan: {plan}
+
+Currently the following tasks have been completed: {tasks_completed}
 
 The summary should contain:
-1. What are the actions that have been taken?
-2. What was the result of these actions?
-3. Key findings and observations
-4. Information that is necessary for the robot to continue future tasks
-
-The summary should be in a concise format.
+1. What are the actions that have been taken and what did they yield (quantify)
+2. Key findings and observations
+3. Information that is necessary for the robot to continue future tasks
 
 Here is the chat history:
 {chat_history}

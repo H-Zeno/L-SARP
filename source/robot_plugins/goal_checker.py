@@ -71,8 +71,7 @@ class TaskExecutionGoalChecker:
         logger.info("Task execution goal checker response: %s", response)
         
         # We save the goal check in the task execution chat history
-        await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.USER, content=check_if_goal_is_completed_prompt))
-        await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content=str(response)))
+        await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content="The Goal Checker has completed its analysis and here is its response to your query: " + str(response)))
         
         # Check for termination keyword and set flag if found
         has_termination_keyword = termination_keyword.lower() in str(response).lower()
