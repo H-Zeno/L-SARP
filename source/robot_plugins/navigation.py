@@ -105,8 +105,13 @@ class NavigationPlugin:
             logger.info(f"New robot position: {frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)}")
 
     @kernel_function(description="function to call when the robot needs to navigate from place A (coordinates) to place B (coordinates)", name="RobotNavigation")
-    async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
+    async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph (integer)"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None:
         try:
+            
+            # Convert the object_id response into an integer if it is a string or float
+            if isinstance(object_id, str) or isinstance(object_id, float):
+                object_id = int(object_id)
+            
             # Safety check: verify the object exists in the scene graph
             if object_id not in robot_state.scene_graph.nodes:
                 error_msg = f"Object with ID {object_id} not found in scene graph."

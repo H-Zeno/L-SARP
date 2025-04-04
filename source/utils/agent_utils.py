@@ -55,7 +55,7 @@ def _log_agent_response(request: str, messages: List[ChatMessageContent], start_
                 # Log function calls with arguments and ID for tracking
                 message_content = f"Tool Request (Function Call, id={item.id}) = {item.function_name}({item.arguments})"
                 log_level = logging.INFO  # Function calls are important INFO level
-                logger.info("(DEBUG) Tool Request (Function Call, id=%s) = %s(%s)", item.id, item.function_name, item.arguments)
+                # logger.info("(DEBUG) Tool Request (Function Call, id=%s) = %s(%s)", item.id, item.function_name, item.arguments)
                 
                 # Handle arguments being either a string (needs loading) or already a dict
                 parsed_arguments = {}

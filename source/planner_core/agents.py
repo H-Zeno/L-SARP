@@ -226,7 +226,7 @@ class GoalCompletionCheckerAgent(RobotAgentBase):
     service_id = config.get("robot_planner_settings", {}).get("goal_completion_checker_service_id", "")
     
     def __init__(self):
-        kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, task_planner_communication=False, do_maths=True)
+        kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, task_planner_communication=False, do_maths=True, core_memory=False)
         
         super().__init__(
             kernel=kernel,

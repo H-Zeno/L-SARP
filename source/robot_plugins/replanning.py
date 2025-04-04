@@ -41,8 +41,6 @@ class ReplanningPlugin:
         parser = PydanticOutputParser(pydantic_object=TaskPlannerResponse)
         model_desc = parser.get_format_instructions()
         
-        robot_planner.replanned = True
-        
         # Summarize the planning chay history:
         # planning_chat_history = await robot_planner.planning_chat_thread.get_messages()
         
@@ -104,7 +102,8 @@ class ReplanningPlugin:
             start_time = agent_response_logs.agent_invocation_start_time
             end_time = agent_response_logs.agent_invocation_end_time
             
-            
+            robot_planner.replanned = True
+        
             robot_planner.plan_generation_logs.append(
                 PlanGenerationLogs(
                     plan_id=robot_planner.replanning_count,
@@ -128,4 +127,4 @@ class ReplanningPlugin:
         logger.info("========================================")
         robot_planner.json_format_agent_thread = None
         
-        return chain_of_thought
+        return chain_of_thought + "Replanning just took place! Please stop and communicate to the task execution agent that it should stop executing the current task and wait for the new plan."

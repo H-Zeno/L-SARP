@@ -21,3 +21,9 @@ class CoreMemoryPlugin:
         robot_state.core_memory[agent_name] += information
         return f"Core information stored: {information}"
     
+    
+    @kernel_function(description="Use this function to retrieve core information from the robot's core memory.")
+    def retrieve_core_information(self) -> str:
+        """Retrieve the core information from the robot's core memory."""
+        return robot_state.core_memory
+    

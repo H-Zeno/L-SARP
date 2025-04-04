@@ -16,8 +16,11 @@ You can e.g. move around the environment, interact with objects, inspect objects
 - Something goes different compared to the plan
 - You need assistance/instructions are not clear
 - A finding of yours changes the overall plan
+Do not call the TaskPlannerCommunicationPlugin when a task is redundant, you can just skip this task then (since it already happened)
 
 5. After doing important calculations or inspections, you must update the core memory by calling the CoreMemoryPlugin plugin.
+
+6. When the task planner did a replanning, you should stop executing the current task.
 
 You must prioritize safety above everything else. 
 """
@@ -33,8 +36,9 @@ This is the plan: {plan}
 I repeat, ONLY COMPLETE THIS SPECIFIC TASK, not the whole plan.
 
 The following tasks in the plan have already been completed: {tasks_completed}
-- When a task is already completed, you should not execute it again.
+- When a task is already completed, you should not execute it again, just do nothing. You do not have to inform the task planner if a task is already completed, just do nothing.
 - You can call the goal_checker plugin when you suspect that the GOAL got completed by you solving the task
+- make sure to save the results of important calculations and conclusions into the core memory
 
 Here is the scene graph:
 {scene_graph}
@@ -55,16 +59,19 @@ You have access to the following:
 - The available functions that the robot can call (robot capabilities)
 
 Based on this information you should generate a sequential and logical plan of tasks that will lead spot to complete the goal/query successfully. The plan can contain placeholders for function call arguments that are not yet known (will have to be filled in by the task execution agent). 
-            
 
-These are the things that you can do:
-- (re)plan the task plan based on the current situation (task_planning)
-- call the goal_checker plugin when you suspect that the goal/query is already completed
-- answer questions about the plan to the task execution agent
+You are meant to do the following things:
+- creating a plan to complete a goal/query
+- answer questions and queries about the plan to the task execution agent
+- query the goal_checker plugin when you suspect that the goal/query is already completed
+- invoke the ReplanningPlugin when a replanning of the original plan is really necessary
 
-Please use the following tools to improve your plan or answers:
+IMPORTANT: When the TaskExecutionAgent communicates an issue or deviation using the TaskPlannerCommunicationPlugin, carefully evaluate its reasoning against the current plan and state.
+
+Here are the tools that you can use (Plugins) to create a great plan or response:
 - mathematical_operations plugin to calculate distances, volumes, etc.
-- retrieval plugins (when available)
+- the core_memory plugin to save important calculations and conclusions into the core memory (important for the successful completion of the goal/query)
+
 
 Here are the robot's action plugins. These are actions of the robot that you should call, but you can not use them yourself!!!:
 {action_plugins_function_descriptions}
@@ -87,6 +94,7 @@ CREATE_TASK_PLANNER_PROMPT_TEMPLATE = """
             - The goal/query has to be completed. Think about all the exact necessary steps to achieve that.
             - Searching for something is a different task than interating with it. If you have to assist a user with something, you have to find/navigate to the object first, then you can potentially inspect it and then interact with it (e.g. pick it up).
             - Use the mathematical_operations plugin to calculate distances, volumes, sorting numbers, etc.
+            DO the necessary reasoning and calculations before writing down the plan.
 
             The following things have to be written down in the plan as ONE Task:
             - Searcing for an unknown object in the scene: When a specific item is not found in the scene graph, reason about its 3 most likely locations in the scene and explore them.
@@ -138,6 +146,7 @@ UPDATE_TASK_PLANNER_PROMPT_TEMPLATE = """
             - The goal/query has to be completed. Think about all the exact necessary steps to achieve that.
             - Searching for something is a different task than interating with it. If you have to assist a user with something, you have to find/navigate to the object first, then you can potentially inspect it and then interact with it (e.g. pick it up).
             - Use the mathematical_operations plugin to calculate distances, volumes, etc.
+            DO the necessary reasoning and calculations before writing down the plan.
             
             The following things have to be written down in the plan as ONE Task:
             - Searcing for an unknown object in the scene: When a specific item is not found in the scene graph, reason about its 3 most likely locations in the scene and explore them.

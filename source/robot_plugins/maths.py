@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Annotated, List
+from typing import Annotated, List, Union
 from utils.recursive_config import Config
 import ast
 
@@ -18,21 +18,28 @@ class MathematicalOperationsPlugin:
     - sort a list of numbers in ascending or descending order"""
     
     @kernel_function(description="This function returns the Euclidean distance between two objects in the scene graph.")
-    def euclidean_distance(self, object_id_1: Annotated[int, "The ID of the first object in the scene graph"], object_id_2: Annotated[int, "The ID of the second object in the scene graph"]) -> float:
+    def euclidean_distance_between_two_objects(self, object_id_1: Annotated[int, "The ID of the first object in the scene graph"], object_id_2: Annotated[int, "The ID of the second object in the scene graph"]) -> float:
         """
         This function returns the Euclidean distance between two objects in the scene graph.
         """
         return np.linalg.norm(robot_state.scene_graph.nodes[object_id_1].centroid - robot_state.scene_graph.nodes[object_id_2].centroid)
     
+    @kernel_function(description="This function returns the Euclidean distance between two coordinates.")
+    def euclidean_distance_between_coordinates(self, coordinates_1: Annotated[str, "The coordinates of the first object e.g. '[3.4, 8.1, 2.1]' "], coordinates_2: Annotated[str, "The coordinates of the second object e.g. '[3.4, 8.1, 2.1]' "]) -> float:
+        """
+        This function returns the Euclidean distance between two coordinates.
+        """
+        return np.linalg.norm(np.array(ast.literal_eval(coordinates_1)) - np.array(ast.literal_eval(coordinates_2)))
+    
     @kernel_function(description="This function allows you to calculate the bounding box volume of an object in the scene graph.")
-    def bounding_box_volume(self, object_id: Annotated[int, "The ID of the object in the scene graph"]) -> float:
+    def object_bounding_box_volume(self, object_id: Annotated[int, "The ID of the object in the scene graph"]) -> float:
         """
         This function allows you to calculate the bounding box volume of an object in the scene graph.
         """
         volume = robot_state.scene_graph.nodes[object_id].dimensions[0] * robot_state.scene_graph.nodes[object_id].dimensions[1] * robot_state.scene_graph.nodes[object_id].dimensions[2]
         return volume
     
-    @kernel_function(description="Use this function to do a mathematical operation on two numbers.")
+    @kernel_function(description="Use this function to do elementary mathematical operations on two numbers.")
     def do_math_operation(self, operation: Annotated[str, "The operation to perform on the two numbers. Choose from 'add', 'subtract', 'multiply', 'divide'"], number_1: Annotated[float, "The first number to perform the operation on"], number_2: Annotated[float, "The second number to perform the operation on"]) -> float:
         """
         This function allows you to perform a mathematical operation on two numbers.
@@ -57,5 +64,49 @@ class MathematicalOperationsPlugin:
         list_to_sort_np = np.array(ast.literal_eval(list_to_sort))
         return sorted(list_to_sort_np, reverse=not ascending)
     
+    @kernel_function(description="Use this function to get the n closest objects to a given object in the scene graph. Use 'all' if you want to return all objects.")
+    def n_closest_objects_to_object(self, object_id: Annotated[int, "The ID of the object in the scene graph"], n: Annotated[str, "The number of closest objects to return. Write 'all' if you want to return all objects."]) -> Annotated[List[str], "A list of the n closest objects to the given object (sorted) and their distance from the given object."]:
+        """
+        This function returns the IDs of the n closest objects to a given object in the scene graph.
+        """
+        scene_nodes = robot_state.scene_graph.nodes
+        if object_id not in scene_nodes:
+            return [f"Error: Object with ID {object_id} not found in the scene graph."]
+
+        if n == "all":
+            # Exclude the object itself if present
+            num_nodes_to_consider = len(scene_nodes) - 1 if object_id in scene_nodes else len(scene_nodes)
+            n = num_nodes_to_consider
+        else:
+            try:
+                n = int(n)
+                if n <= 0:
+                    return ["Error: n must be a positive integer or 'all'."]
+            except ValueError:
+                return ["Error: n must be a positive integer or 'all'."]
+
+        # Calculate distances to all other nodes
+        distances = []
+        for node_id, node_data in scene_nodes.items():
+            if node_id == object_id: # Don't compare the object to itself
+                continue
+            distance = self.euclidean_distance_between_two_objects(object_id, node_id)
+            # Store the semantic label ID (sem_label) for now
+            distances.append((node_id, distance, node_data.sem_label))
+
+        # Sort by distance
+        distances.sort(key=lambda item: item[1])
+
+        # Take the top n
+        closest_n = distances[:n]
+
+        # Format the response string using the label mapping
+        response = []
+        for node_id, dist, sem_label in closest_n:
+            # Get the string label from the mapping
+            label = robot_state.scene_graph.label_mapping.get(sem_label, f"Unknown Label ID: {sem_label}")
+            response.append(f"Object ID: {node_id} - Semantic Label: {label} - Distance: {dist:.4f}")
+
+        return response
 
 
