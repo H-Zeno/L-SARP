@@ -18,6 +18,7 @@ from semantic_kernel.agents import ChatCompletionAgent
 from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 from semantic_kernel.functions import KernelArguments
+from semantic_kernel.connectors.ai.google.google_ai import GoogleAIChatCompletion, GoogleAIChatPromptExecutionSettings
 
 # Local imports
 from configs.agent_instruction_prompts import (
@@ -42,10 +43,9 @@ logger = logging.getLogger("main")
 # Load configuration
 config = Config()
 
-
 class RobotAgentBase(ChatCompletionAgent, ABC):
     """Base class for all robot agents."""
-    service_id: ClassVar[str] = "gpt4o"
+    service_id: ClassVar[str] = "gpt-4o"
     
     def __init__(self, *args, **kwargs):
         # First initialize the parent class
@@ -80,16 +80,20 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
     
     def _create_kernel(self, action_plugins=False, retrieval_plugins=False, task_planner_communication=False, do_maths=False, core_memory=False) -> Kernel:
         """Create and configure a kernel with all the AI services that we support."""
+        global settings # Declare that we are using the global settings variable
         logger.info(f"Creating kernel with service ID: {self.service_id}")
         kernel = Kernel()
         
-        if self.service_id == "gpt4o":
+        if self.service_id == "gpt-4o":
             # General Multimodal Intelligence model (GPT4o)
             kernel.add_service(OpenAIChatCompletion(
-                service_id="gpt4o",
+                service_id="gpt-4o",
                 api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
                 ai_model_id="gpt-4o-2024-11-20"
             ))
+            
+            settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
+            settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
 
         elif self.service_id == "o3-mini":
             # Reasoning models
@@ -98,6 +102,8 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
                 api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
                 ai_model_id="o3-mini-2025-01-31"
             ))
+            settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
+            settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
         
         elif self.service_id == "o1":
             # Reasoning models
@@ -106,6 +112,8 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
                 api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
                 ai_model_id="o1-2024-12-17"
             ))
+            settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
+            settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
         
         elif self.service_id == "deepseek-r1":
             # Reasoning models
@@ -117,15 +125,37 @@ class RobotAgentBase(ChatCompletionAgent, ABC):
                     base_url="https://integrate.api.nvidia.com/v1"
                 )
             ))
+            settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
+            settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
         
-        elif self.service_id == "small_cheap_model":
+        elif self.service_id == "gpt-4o-mini":
             # Small and cheap model for the processing of certain user responses
             kernel.add_service(OpenAIChatCompletion(
-                service_id="small_cheap_model",
+                service_id="gpt-4o-mini",
                 api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
                 ai_model_id="gpt-4o-mini"
             ))
+            settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
+            settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
         
+        # elif self.service_id == "gemini-2.0-flash":
+        #     kernel.add_service(OpenAIChatCompletion(
+        #         service_id="gemini-2.0-flash",
+        #         ai_model_id="gemini-2.0-flash",
+        #         async_client=AsyncOpenAI(
+        #             api_key=dotenv_values(".env_core_planner").get("GOOGLE_API_KEY"),
+        #             base_url="https://integrate.api.nvidia.com/v1"
+        #         )
+        #     ))
+        elif self.service_id == "gemini-2.0-flash":
+            kernel.add_service(GoogleAIChatCompletion(
+                service_id="gemini-2.0-flash",
+                gemini_model_id="gemini-2.0-flash",
+                api_key=dotenv_values(".env_core_planner").get("GOOGLE_API_KEY"),
+            ))
+            settings = GoogleAIChatPromptExecutionSettings(function_choice_behavior=FunctionChoiceBehavior.Auto())
+            
+
         if action_plugins:
             kernel = self._add_action_plugins(kernel)
             
@@ -149,24 +179,25 @@ class TaskPlannerAgent(RobotAgentBase):
     service_id = config.get("robot_planner_settings", {}).get("task_planner_service_id", "")
 
     def __init__(self):
-        kernel = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=False, do_maths=True, core_memory=True)
+        kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, task_planner_communication=False, do_maths=True, core_memory=True)
         
-        # Add the goal completion checker plugin
+        # Add the goal completion checkeFailed to parsr plugin
         kernel.add_plugin(TaskPlannerGoalChecker(), plugin_name="goal_checker")
         
         # Add the task planning (and replanning) plugins
         kernel.add_plugin(ReplanningPlugin(), plugin_name="task_planning")
         
-        # Load the correct prompt execution settings
-        settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
-        settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
+        # Create a kernel with only the action plugins for the metadata extraction
+        kernel_action_plugins = self._create_kernel(action_plugins=True, retrieval_plugins=False, task_planner_communication=False, do_maths=False, core_memory=False)
+        action_plugins_function_descriptions = kernel_action_plugins.get_full_list_of_function_metadata()
         
+        # logger.info(f"Action plugins function descriptions: {action_plugins_function_descriptions}")
         
         super().__init__(
             kernel=kernel,
             arguments=KernelArguments(settings=settings),
             name="TaskPlannerAgent",
-            instructions=TASK_PLANNER_AGENT_INSTRUCTIONS,
+            instructions=TASK_PLANNER_AGENT_INSTRUCTIONS.format(action_plugins_function_descriptions=str(action_plugins_function_descriptions)),
             description="Select me to plan sequential tasks that the robot should perform to complete the goal."
         )
 
@@ -180,10 +211,6 @@ class TaskExecutionAgent(RobotAgentBase):
         
         # Add the goal completion checker plugin
         kernel.add_plugin(TaskExecutionGoalChecker(), plugin_name="goal_checker")
-        
-        # Load the correct prompt execution settings
-        settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
-        settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
         
         super().__init__(
             name="TaskExecutionAgent",
@@ -200,9 +227,6 @@ class GoalCompletionCheckerAgent(RobotAgentBase):
     
     def __init__(self):
         kernel = self._create_kernel(action_plugins=False, retrieval_plugins=False, task_planner_communication=False, do_maths=True)
-        
-        settings = kernel.get_prompt_execution_settings_from_service_id(service_id=self.service_id)
-        settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
         
         super().__init__(
             kernel=kernel,

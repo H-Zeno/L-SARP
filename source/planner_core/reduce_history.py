@@ -2,24 +2,33 @@ import logging
 from dotenv import dotenv_values
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
+from semantic_kernel.connectors.ai.google.google_ai import GoogleAIChatCompletion
 from semantic_kernel.contents.chat_history import ChatHistory
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.exceptions.agent_exceptions import AgentThreadOperationException
 
 from configs.agent_instruction_prompts import HISTORY_SUMMARY_REDUCER_INSTRUCTIONS
-
+from utils.recursive_config import Config
 from planner_core.robot_planner import RobotPlannerSingleton
 robot_planner = RobotPlannerSingleton()
 
 logger = logging.getLogger("main")
-
+config = Config()
 summary_kernel = Kernel()
-summary_kernel.add_service(OpenAIChatCompletion(
-    service_id="small_cheap_model",
-    api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
-    ai_model_id="gpt-4o-mini"
-))
+
+
+if config.get("robot_planner_settings").get("history_reduction_model_id") == "gemini-2.0-flash":
+    summary_kernel.add_service(GoogleAIChatCompletion(
+                gemini_model_id="gemini-2.0-flash",
+                api_key=dotenv_values(".env_core_planner").get("GOOGLE_API_KEY"),
+    ))  
+    
+else:   
+    summary_kernel.add_service(OpenAIChatCompletion(
+        api_key=dotenv_values(".env_core_planner").get("OPENAI_API_KEY"),
+        ai_model_id=config.get("robot_planner_settings").get("history_reduction_model_id")
+    ))
 
 
 # will only reduce every (threshold - untouched_messages - 1) messages
@@ -30,7 +39,7 @@ async def reduce_and_log_chat_history(chat_thread, thread_name, threshold=10, un
         initial_count = len(initial_messages.messages)
         
         if initial_count <= threshold:
-            logger.info(f"@ {thread_name} History count count is below threshold of {threshold}: {initial_count}")
+            logger.info(f"@ {thread_name} History count is equal orbelow threshold of {threshold}: {initial_count}")
             return
         
         logger.info("History count above threshold, attempting to reduce...")
@@ -54,7 +63,7 @@ async def reduce_and_log_chat_history(chat_thread, thread_name, threshold=10, un
         
         summary_result = await summary_kernel.invoke_prompt(prompt) # Added await
         summary_content = str(summary_result) # Extract string content from the result
-        logger.info(f"@ {thread_name} Summary: {summary_content}")
+        # logger.info(f"@ {thread_name} Summary: {summary_content}")
   
         # Create the new chat history: summary + newest untouched messages
         chat_history = ChatHistory()

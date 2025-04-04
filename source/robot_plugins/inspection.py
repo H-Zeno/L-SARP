@@ -123,15 +123,15 @@ class InspectionPlugin:
         
         # Check if object exists in scene graph
         if object_id not in robot_state.scene_graph.nodes:
-            await communication.inform_user(f"Object with ID {object_id} not found in scene graph.")
-            return None
+            feedback = f"Tried to inspect object with ID {object_id} but it was not found in the scene graph."
+            return feedback
 
         if not use_robot:
-            logger.info(f"Inspected object with id {object_id} in simulation (without robot).")
             object_node = robot_state.scene_graph.nodes[object_id]
+            sem_label = robot_state.scene_graph.label_mapping.get(object_node.sem_label, "object")
             object_node.interactions_with_object.append("inspected") # Log interaction
-            logger.info(f"Object inspection logged in the scene graph.")
-            return None
+            feedback = f"Inspected object with id {object_id} and semantic label {sem_label}."
+            return feedback
 
         centroid_pose = Pose3D(robot_state.scene_graph.nodes[object_id].centroid)
         response = await communication.ask_user(f"The robot would like to inspect object with id {object_id} and centroid {centroid_pose} with a gaze. Do you want to proceed? Please enter exactly 'yes' if you want to proceed.")   

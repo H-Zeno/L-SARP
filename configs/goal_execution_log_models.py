@@ -1,5 +1,5 @@
 from typing import Dict, Optional, List, Any
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, field_validator
 from datetime import datetime
 
 from configs.json_object_models import TaskPlannerResponse
@@ -13,6 +13,30 @@ class ToolCall(BaseModel):
     tool_call_arguments: Dict
     tool_call_result: Optional[str] = None
     
+    @field_validator('tool_call_arguments', mode='before')
+    @classmethod
+    def convert_repeated_composite(cls, v: Dict) -> Dict:
+        """Convert RepeatedComposite objects to lists for JSON serialization."""
+        if not isinstance(v, dict):
+            # If it's not a dictionary, return as is or handle appropriately
+            return v
+        
+        # Import RepeatedComposite locally to avoid import errors if proto isn't used everywhere
+        try:
+            from proto.marshal.collections.repeated import RepeatedComposite
+        except ImportError:
+            RepeatedComposite = None  # Define as None if import fails
+
+        new_v = {}
+        for key, value in v.items():
+            if RepeatedComposite is not None and isinstance(value, RepeatedComposite):
+                # Convert RepeatedComposite to a list
+                new_v[key] = list(value)
+            else:
+                # Keep other values as they are
+                new_v[key] = value
+        return new_v
+
 class AgentResponse(BaseModel):
     """Logs for an agent response. Must contain exactly one content type."""
     text_content: Optional[str] = None

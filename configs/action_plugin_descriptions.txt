@@ -1,0 +1,24 @@
+InspectionPlugin:
+  """This plugin contains functions to inspect certain objects in the scene."""
+- inspect_object_with_gaze, description: "After having navigated to an object/furniture, you can call this function to inspect the object with gaze and save the image to your memory."
+  - function signature: async def inspect_object_with_gaze(self, object_id: Annotated[int, "ID of the object in the scene graph"]) -> None
+
+ItemInteractionsPlugin:
+  """Plugin for interacting with objects in the scene."""
+- push_light_switch, description: "function to call to push a certain light switch present in the scene graph"
+  - function signature: async def push_light_switch(self, light_switch_object_id: Annotated[int, "The ID of the light switch object"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> str
+- grasp_object, description: "function to call to grasp a certain object"
+  - function signature: async def grasp_object(self, object_id: Annotated[int, "The ID of the object to grasp"]) -> str
+- place_object, description: "Function to call to place a certain object somewhere. Before placing, the robot should have navigated to the location first."
+  - function signature: async def place_object(self, object_id: Annotated[int, "The ID of the object to place"], placing_3d_coordinates: Annotated[List[float], f"The coordinates of the location to place the object. The robot can only place an object at a location that is within {object_interaction_config['OBJECT_GRASP_DISTANCE']} of the robot's position."]) -> str
+- open_drawer, description: "function to call to open a certain drawer present in the scene graph"
+  - function signature: async def open_drawer(self, drawer_id: Annotated[int, "The ID of the drawer to open"]) -> str
+- close_drawer, description: "function to call to close a certain drawer present in the scene graph"
+  - function signature: async def close_drawer(self, drawer_id: Annotated[int, "The ID of the drawer to close"]) -> str
+- use_object, description: "function to call to use a certain object"
+  - function signature: async def use_object(self, object_id: Annotated[int, "The ID of the object to use"], description_of_use: Annotated[str, "A clear (3-5 words) description on how to use the object"]) -> str
+
+NavigationPlugin:
+  """Plugin for navigating the robot to a specific object in the scene."""
+- RobotNavigation, description: "function to call when the robot needs to navigate from place A (coordinates) to place B (coordinates)"
+  - function signature: async def move_to_object(self, object_id: Annotated[int, "ID of the object in the scene graph"], object_description: Annotated[str, "A clear (3-5 words) description of the object."]) -> None

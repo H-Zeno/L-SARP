@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Annotated, List
 from utils.recursive_config import Config
+import ast
 
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
@@ -48,11 +49,13 @@ class MathematicalOperationsPlugin:
             return "Invalid operation"
     
     @kernel_function(description="Use this function to sort a list of numbers in ascending or descending order.")
-    def sort_list(self, list_to_sort: Annotated[List[float], "The list of numbers to sort"], ascending: Annotated[bool, "Whether to sort the list in ascending or descending order"]) -> List[float]:
+    def sort_list(self, list_to_sort: Annotated[str, "A string representation of a list containing the numbers to sort (e.g., '[4, 2, 3]')"], ascending: Annotated[bool, "Whether to sort the list in ascending or descending order"]) -> List[float]:
         """
         This function allows you to sort a list of numbers in ascending or descending order.
         """
-        return sorted(list_to_sort, reverse=not ascending)
+        # convert the string to a numpy array
+        list_to_sort_np = np.array(ast.literal_eval(list_to_sort))
+        return sorted(list_to_sort_np, reverse=not ascending)
     
 
 

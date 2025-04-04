@@ -43,20 +43,20 @@ class ReplanningPlugin:
         
         robot_planner.replanned = True
         
-        planning_chat_history = await robot_planner.planning_chat_thread.get_messages()
+        # Summarize the planning chay history:
+        # planning_chat_history = await robot_planner.planning_chat_thread.get_messages()
         
         update_plan_prompt = UPDATE_TASK_PLANNER_PROMPT_TEMPLATE.format(
             goal=robot_planner.goal,
             previous_plan=robot_planner.plan,
             issue_description=issue_description, 
-            tasks_completed=', '.join(map(str, robot_planner.tasks_completed)), 
-            planning_chat_history=planning_chat_history, 
+            tasks_completed=', '.join(map(str, robot_planner.tasks_completed)),
             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
             robot_position=str(robot_state.virtual_robot_pose) if not use_robot else str(frame_transformer.get_current_body_position_in_frame(robot_state.frame_name)),
             core_memory=str(robot_state.core_memory),
             model_description=model_desc
         )
-
+        
         # This can technically call again the update task planner plugin (hhmm)
         updated_plan_response, robot_planner.json_format_agent_thread, agent_response_logs = await invoke_agent(
             agent=robot_planner.task_planner_agent, 

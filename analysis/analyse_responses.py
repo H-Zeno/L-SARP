@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 project_root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 path_to_scene_data = config.get('robot_planner_settings').get('path_to_scene_data')
 logs_path = config.get('robot_planner_settings').get('path_for_log_analysis')
+
 # Get the path for log analysis
 path_for_log_analysis = os.path.join(project_root_dir, path_to_scene_data, logs_path)
 logger.info(f"Path for log analysis: {path_for_log_analysis}")
@@ -29,6 +30,11 @@ formatted_logs_data = {"goal_execution_logs": list(raw_logs_data.values())}
 
 # Validate the formatted data using the Pydantic model
 goal_execution_logs_collection = GoalExecutionLogsCollection.model_validate(formatted_logs_data)
+
+
+###########################
+# Get the standard
+###########################
 
 
 # Analyse the correlation between
