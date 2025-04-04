@@ -67,7 +67,7 @@ class MathematicalOperationsPlugin:
     @kernel_function(description="Use this function to get the n closest objects to a given object in the scene graph. Use 'all' if you want to return all objects.")
     def n_closest_objects_to_object(self, object_id: Annotated[int, "The ID of the object in the scene graph"], n: Annotated[str, "The number of closest objects to return. Write 'all' if you want to return all objects."]) -> Annotated[List[str], "A list of the n closest objects to the given object (sorted) and their distance from the given object."]:
         """
-        This function returns the IDs of the n closest objects to a given object in the scene graph.
+        This function returns the IDs of the n closest objects to a given object in the scene graph (sorted by distance).
         """
         scene_nodes = robot_state.scene_graph.nodes
         if object_id not in scene_nodes:
@@ -108,5 +108,55 @@ class MathematicalOperationsPlugin:
             response.append(f"Object ID: {node_id} - Semantic Label: {label} - Distance: {dist:.4f}")
 
         return response
+    
+    @kernel_function(description="Use this function to get the n closest objects to a given coordinate in the scene graph. Use 'all' if you want to return all objects. This function could be used to find the closest object(s) to the robot's current position.")
+    def n_closest_objects_to_coordinate(self, coordinate: Annotated[str, "The coordinates of which you want to calculate the closest objects to (can be this of the robot). e.g. '[3.4, 8.1, 2.1]' "], n: Annotated[str, "The number of closest objects to return. Write 'all' if you want to return all objects."]) -> Annotated[List[str], "A list of the n closest objects to the given coordinates (sorted) and their distance from the given coordinates."]:
+        """
+        This function returns the IDs of the n closest objects to a given coordinate in the scene graph (sorted by distance).
+        """
+        scene_nodes = robot_state.scene_graph.nodes
+        
+        if n == "all":
+            n = len(scene_nodes)
+        else:
+            try:
+                n = int(n)
+                if n <= 0:
+                    return ["Error: n must be a positive integer or 'all'."]
+            except ValueError:
+                return [f"Error: Invalid value for n '{n}'. Must be a positive integer or 'all'."]
+            
+        # Parse the input coordinate string once before the loop
+        try:
+            target_coord_np = np.array(ast.literal_eval(coordinate))
+            if target_coord_np.shape != (3,):
+                 raise ValueError("Coordinate must be a 3D point.")
+        except (ValueError, SyntaxError, TypeError) as e:
+            return [f"Error: Invalid input coordinate string '{coordinate}': {e}"]
+
+        # Calculate distances to all other nodes
+        distances = []
+        for node_id, node_data in scene_nodes.items():
+            object_coordinates_np = node_data.centroid
+            # Calculate distance directly using numpy
+            distance = np.linalg.norm(object_coordinates_np - target_coord_np)
+            distances.append((node_id, distance, node_data.sem_label))
+
+        # Sort by distance
+        distances.sort(key=lambda item: item[1])
+
+        # Take the top n
+        closest_n = distances[:n]
+
+        # Format the response string using the label mapping
+        response = []
+        for node_id, dist, sem_label in closest_n:
+            # Get the string label from the mapping
+            label = robot_state.scene_graph.label_mapping.get(sem_label, f"Unknown Label ID: {sem_label}")
+            response.append(f"Object ID: {node_id} - Semantic Label: {label} - Distance: {dist:.4f}")
+
+        return response
+
+
 
 
