@@ -55,10 +55,26 @@ def _log_agent_response(request: str, messages: List[ChatMessageContent], start_
                 # Log function calls with arguments and ID for tracking
                 message_content = f"Tool Request (Function Call, id={item.id}) = {item.function_name}({item.arguments})"
                 log_level = logging.INFO  # Function calls are important INFO level
+                logger.info("(DEBUG) Tool Request (Function Call, id=%s) = %s(%s)", item.id, item.function_name, item.arguments)
                 
+                # Handle arguments being either a string (needs loading) or already a dict
+                parsed_arguments = {}
+                if isinstance(item.arguments, str):
+                    try:
+                        parsed_arguments = json.loads(item.arguments)
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse arguments JSON string: %s", item.arguments)
+                        # Decide how to handle invalid JSON - maybe log and continue?
+                        # For now, we'll keep parsed_arguments as empty dict or raise error?
+                elif isinstance(item.arguments, dict):
+                    parsed_arguments = item.arguments
+                else:
+                    logger.warning("Unexpected type for item.arguments: %s", type(item.arguments))
+                    # Handle unexpected type if necessary
+
                 tool_call_info = ToolCall(
                     tool_call_name=item.function_name,
-                    tool_call_arguments=json.loads(item.arguments),
+                    tool_call_arguments=parsed_arguments,
                 )
                 
             elif isinstance(item, FunctionResultContent):

@@ -18,9 +18,10 @@ robot_planner_settings:
   goals_path: 'configs/goals_20.json'
   task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"
   path_to_scene_data: 'data_scene/' # relative path to project_root_dir
-  task_planner_service_id: 'gpt4o'
-  task_execution_service_id: 'gpt4o'
-  goal_completion_checker_service_id: 'gpt4o'
+  task_planner_service_id: 'gemini-2.0-flash'
+  task_execution_service_id: 'gemini-2.0-flash'
+  goal_completion_checker_service_id: 'gemini-2.0-flash'
+  history_reduction_model_id: 'gemini-2.0-flash' # for now only suppport OpenAIChatCompletion
   debug: true
   path_for_log_analysis: 'SEMANTIC_CORNER_WITH_BED/execution_logs_goals_20_20250402_160336.json'
 

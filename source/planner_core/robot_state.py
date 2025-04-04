@@ -100,7 +100,7 @@ class RobotState:
         self.object_in_gripper = None
         
         # Variables for in simulation
-        self.virtual_robot_pose = None
+        self.virtual_robot_pose = np.array([1, 0, 0.6])
         
         # Core memory
         self.core_memory = dict()

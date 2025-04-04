@@ -6,6 +6,7 @@ import logging
 import time
 import os
 import copy
+import ast
 from dotenv import dotenv_values
 import numpy as np
 from pathlib import Path
@@ -52,6 +53,7 @@ planner_settings = dotenv_values(".env_core_planner")
 use_robot = general_config["robot_planner_settings"]["use_with_robot"]
 
 class ItemInteractionsPlugin:
+    """Plugin for interacting with objects in the scene."""
     
     class _Push_Light_Switch(ControlFunction):
         light_switch_detection = LightSwitchDetection()
@@ -342,8 +344,10 @@ class ItemInteractionsPlugin:
         # TODO: Implement actual robot logic for grasping
         pass
 
-    @kernel_function(description="Function to call to place a certain object somewhere. Before placing, the robot should have navigated to the location first.", name="place_object")
-    async def place_object(self, object_id: Annotated[int, "The ID of the object to place"], placing_3d_coordinates: Annotated[List[float], f"The coordinates of the location to place the object. The robot can only place an object at a location that is within {object_interaction_config['OBJECT_GRASP_DISTANCE']} of the robot's position."]) -> str:
+    @kernel_function(description="Function to call to place a certain object somewhere. Before placing an object at a location, the robot should have navigated to the location first.", name="place_object")
+    async def place_object(self,
+                           object_id: Annotated[int, "The ID of the object to place"],
+                           placing_3d_coordinates: Annotated[str, "A string representation of a list containing the 3D coordinates (e.g., '[-0.1, 0.2, 0.9]') for the location to place the object."]) -> str:
         if not use_robot:
             
             # Check that the robot is holding an object
@@ -352,15 +356,31 @@ class ItemInteractionsPlugin:
                 logger.info(feedback)
                 return feedback
             
-            if not np.linalg.norm(placing_3d_coordinates - robot_state.virtual_robot_pose) < object_interaction_config["OBJECT_GRASP_DISTANCE"]:
-                feedback = f"The object can only be placed at a location that is within {object_interaction_config['OBJECT_GRASP_DISTANCE']} of the robot's position. When you want to place an object somewhere, please navigate to that location first."
+            sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label, "object")
+            
+            # convert the string to a numpy array
+            try:
+                placing_3d_coordinates_list = ast.literal_eval(placing_3d_coordinates)
+                placing_3d_coordinates_np = np.array(placing_3d_coordinates_list)  # Convert list to numpy array
+            except (ValueError, SyntaxError) as e:
+                feedback = f"Error parsing placing_3d_coordinates: {e}. Please provide coordinates as a string representation of a list, e.g., '[-0.1, 0.2, 0.9]'."
+                logger.error(feedback)
+                return feedback
+            
+            if not np.linalg.norm(placing_3d_coordinates_np - robot_state.virtual_robot_pose) < object_interaction_config["OBJECT_GRASP_DISTANCE"]:
+                # first make the robot navigate to the placing location
+                robot_state.virtual_robot_pose = placing_3d_coordinates_np
+                feedback = f"Successfully navigated the robot to the placing location and placed object with ID {object_id}, semantic label {sem_label} at the location {placing_3d_coordinates}."
+                
+                # feedback = f"To place an object somewhere, you have to first navigate to the location of where you want to place the object. Currently you are at {robot_state.virtual_robot_pose} and you wanted to place the object at {placing_3d_coordinates}."
                 logger.info(feedback)
                 return feedback
+            # This can be simply solved be adding automatic navigation to the location first, when the robot is not close to the placing location
             
             # Place the object at the new location (for now the same location as the robot just navigated to)
             object_node = robot_state.scene_graph.nodes[object_id]
             robot_state.object_in_gripper = None
-            object_node.centroid = placing_3d_coordinates
+            object_node.centroid = placing_3d_coordinates_np
             
             # Log the interaction
             object_node.interactions_with_object.append("placed object") # Log interaction

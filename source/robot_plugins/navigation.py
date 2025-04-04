@@ -53,6 +53,7 @@ import logging
 logger = logging.getLogger("plugins")
 
 class NavigationPlugin:
+    """Plugin for navigating the robot to a specific object in the scene."""
     general_config = Config()
     object_interaction_config = Config("object_interaction_configs")
     inspection_distance = object_interaction_config["INSPECTION_DISTANCE"]
@@ -110,18 +111,17 @@ class NavigationPlugin:
             if object_id not in robot_state.scene_graph.nodes:
                 error_msg = f"Object with ID {object_id} not found in scene graph."
                 logger.error(error_msg)
-                await communication.inform_user(error_msg)
-                return None
+                return error_msg
 
             object_centroid_pose = robot_state.scene_graph.nodes[object_id].centroid
             sem_label = robot_state.scene_graph.label_mapping.get(robot_state.scene_graph.nodes[object_id].sem_label, "Unknown object")
-            logger.info(f"Object with id {object_id} has label {sem_label}.")
 
             if self.general_config["robot_planner_settings"]["use_with_robot"] is not True:
-                logger.info(f"Moving to object with id {object_id} and centroid {object_centroid_pose} in simulation (without robot).")
-                logger.info(f"Setting virtual robot pose to {object_centroid_pose}")
-                robot_state.virtual_robot_pose = object_centroid_pose
-                return None
+                feedback = f"Moving to object with id {object_id}, semantic label {sem_label} and centroid {object_centroid_pose}."
+                robot_state.virtual_robot_pose[0] = object_centroid_pose[0]
+                robot_state.virtual_robot_pose[1] = object_centroid_pose[1]
+                logger.info(feedback)
+                return feedback
             
             # Determine appropriate interaction pose based on object type
             furniture_labels = self.general_config["semantic_labels"]["furniture"]
