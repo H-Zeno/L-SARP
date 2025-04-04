@@ -8,7 +8,6 @@ from semantic_kernel.functions.kernel_function_decorator import kernel_function
 from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.contents import ChatMessageContent
 from configs.agent_instruction_prompts import (
-    TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE,
     TASK_PLANNER_AGENT_GOAL_CHECK_PROMPT_TEMPLATE,
     TASK_EXECUTION_AGENT_GOAL_CHECK_PROMPT_TEMPLATE
 )
