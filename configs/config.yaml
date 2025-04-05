@@ -23,7 +23,6 @@ robot_planner_settings:
   goal_completion_checker_service_id: 'gemini-2.0-flash'
   history_reduction_model_id: 'gemini-2.0-flash' # for now only suppport OpenAIChatCompletion
   debug: true
-  path_for_log_analysis: 'SEMANTIC_CORNER_WITH_BED/execution_logs_goals_20_20250402_160336.json'
 
 robot_parameters:
   verbose: False
