@@ -2,6 +2,7 @@ import logging
 import time
 from datetime import datetime
 from typing import Annotated, Dict, Tuple, List
+import re
 
 from semantic_kernel.agents import ChatHistoryAgentThread
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
@@ -72,8 +73,9 @@ class TaskExecutionGoalChecker:
         # We save the goal check in the task execution chat history
         await robot_planner.task_execution_chat_thread.on_new_message(ChatMessageContent(role=AuthorRole.ASSISTANT, content="The Goal Checker has completed its analysis and here is its response to your query: " + str(response)))
         
-        # Check for termination keyword and set flag if found
-        has_termination_keyword = termination_keyword.lower() in str(response).lower()
+        # Updated check to find the exact phrase, not just the words appearing anywhere
+        response_lower = str(response).lower()
+        has_termination_keyword = bool(re.search(r'\b' + re.escape(termination_keyword.lower()) + r'\b', response_lower))
         logger.info("Termination keyword '%s' found in response: %s", termination_keyword, has_termination_keyword)
         
         if has_termination_keyword:
@@ -125,8 +127,9 @@ class TaskPlannerGoalChecker:
         agent_response_logs.plan_id = robot_planner.replanning_count
         logger.info("Task planner goal completion checker response: %s", response)
         
-        # Check for termination keyword and set flag if found
-        has_termination_keyword = termination_keyword.lower() in str(response).lower()
+        # Updated check to find the exact phrase, not just the words appearing anywhere
+        response_lower = str(response).lower()
+        has_termination_keyword = bool(re.search(r'\b' + re.escape(termination_keyword.lower()) + r'\b', response_lower))
         logger.info("Termination keyword '%s' found in response: %s", termination_keyword, has_termination_keyword)
         
         if has_termination_keyword:
