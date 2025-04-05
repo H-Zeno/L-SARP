@@ -239,6 +239,7 @@ async def main():
                         # Format the task execution prompt
                         task_execution_prompt = TASK_EXECUTION_PROMPT_TEMPLATE.format(
                             task=task,
+                            goal=goal,
                             plan=robot_planner.plan,
                             tasks_completed=robot_planner.tasks_completed,
                             scene_graph=str(robot_state.scene_graph.scene_graph_to_dict()),
@@ -253,12 +254,18 @@ async def main():
                             input_text_message=task_execution_prompt,
                             input_image_message=robot_state.get_current_image_content()
                         )
+
+                        # # Reset the image state after the execution of a task
+                        # robot_state.image_state = None
+                        # robot_state.depth_image_state = None
                         
-                        if task.get("relevant_objects") is not None:
-                            relevant_objects_identified_by_planner = [obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
-                        else:
-                            relevant_objects_identified_by_planner = None
+                        # if task.get("relevant_objects") is not None:
+                        #     relevant_objects_identified_by_planner = [obj.get('sem_label', str(obj)) + ' (object id: ' + str(obj.get('object_id', str(obj))) + ')' for obj in task.get("relevant_objects", [])]
+                        # else:
+                        #     relevant_objects_identified_by_planner = None
                         
+                        relevant_objects_identified_by_planner = None
+
                         # Log the task execution
                         robot_planner.task_execution_logs.append(
                             TaskExecutionLogs(

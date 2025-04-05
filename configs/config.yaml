@@ -11,9 +11,9 @@ note: 'Language-based Scene Aware Robot Planner'
 path_to_data: 'data/'
 
 robot_planner_settings:
-  use_with_robot: true
+  use_with_robot: false
   termination_keyword: 'goal completed' # has to be lowercase
-  max_replanning_count: 10
+  max_replanning_count: 5
   active_scene: 'SEMANTIC_CORNER_WITH_BED' # needs to be in all caps, see misc/scenes_and_plugins_config.py
   goals_path: 'configs/goals_12.json'
   task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"

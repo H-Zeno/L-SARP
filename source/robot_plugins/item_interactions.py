@@ -381,7 +381,10 @@ class ItemInteractionsPlugin:
             object_node.centroid = placing_3d_coordinates_np
             
             # Log the interaction
+            if not hasattr(object_node, 'interactions_with_object'):
+                object_node.interactions_with_object = []
             object_node.interactions_with_object.append("placed object") # Log interaction
+            
             feedback = f"Placed object with ID {object_id} at location {placing_3d_coordinates}"
             logger.info(feedback)
             logger.info("Object interaction logged in the scene graph.")
@@ -393,11 +396,23 @@ class ItemInteractionsPlugin:
     @kernel_function(description="function to call to open a certain drawer present in the scene graph", name="open_drawer")
     async def open_drawer(self, drawer_id: Annotated[int, "The ID of the drawer to open"]) -> str:
         if not use_robot:
-            logger.info(f"Opened drawer with ID {drawer_id} in simulation (without robot).")
+            # Get drawer node
             drawer_node = robot_state.scene_graph.nodes[drawer_id]
-            drawer_node.interactions_with_object.append("opened") # Log interaction
-            # Potentially add drawer_node.is_open = True ?
-            feedback = f"Opened drawer with ID {drawer_id} in simulation (without robot)."
+            
+            # Check if the drawer is already open
+            if hasattr(drawer_node, 'is_open') and drawer_node.is_open:
+                feedback = f"Drawer with ID {drawer_id} is already open."
+                logger.info(feedback)
+                return feedback
+            
+            # Open the drawer
+            logger.info(f"Opening drawer with ID {drawer_id}.")
+            drawer_node.interactions_with_object.append("opened")  # Log interaction
+            
+            # Set the is_open attribute to True
+            drawer_node.is_open = True
+            
+            feedback = f"Opened drawer with ID {drawer_id}."
             logger.info(feedback)
             logger.info("Drawer interaction logged in the scene graph.")
             return feedback
@@ -408,11 +423,23 @@ class ItemInteractionsPlugin:
     @kernel_function(description="function to call to close a certain drawer present in the scene graph", name="close_drawer")
     async def close_drawer(self, drawer_id: Annotated[int, "The ID of the drawer to close"]) -> str:
         if not use_robot:
-            logger.info(f"Closed drawer with ID {drawer_id} in simulation (without robot).")
+            # Get drawer node
             drawer_node = robot_state.scene_graph.nodes[drawer_id]
-            drawer_node.interactions_with_object.append("closed") # Log interaction
-            # Potentially add drawer_node.is_open = False ?
-            feedback = f"Closed drawer with ID {drawer_id} in simulation (without robot)."
+            
+            # Check if the drawer is already closed
+            if hasattr(drawer_node, 'is_open') and not drawer_node.is_open:
+                feedback = f"Drawer with ID {drawer_id} is already closed."
+                logger.info(feedback)
+                return feedback
+            
+            # Close the drawer
+            logger.info(f"Closing drawer with ID {drawer_id}.")
+            drawer_node.interactions_with_object.append("closed")  # Log interaction
+            
+            # Set the is_open attribute to False
+            drawer_node.is_open = False
+            
+            feedback = f"Closed drawer with ID {drawer_id}."
             logger.info(feedback)
             logger.info("Drawer interaction logged in the scene graph.")
             return feedback
@@ -425,7 +452,12 @@ class ItemInteractionsPlugin:
         if not use_robot:
             logger.info(f"Used object with ID {object_id} ({description_of_use}) in simulation (without robot).")
             object_node = robot_state.scene_graph.nodes[object_id]
+            
+            # Check if interactions_with_object exists
+            if not hasattr(object_node, 'interactions_with_object'):
+                object_node.interactions_with_object = []
             object_node.interactions_with_object.append(description_of_use)
+            
             feedback = f"Used object with ID {object_id} ({description_of_use}) in simulation (without robot)."
             logger.info(feedback)
             logger.info("Object interaction logged in the scene graph.")

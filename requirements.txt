@@ -1,4 +1,5 @@
-semantic-kernel==1.26.1
+# semantic-kernel==1.26.1
+semantic-kernel[google]
 PyYAML==6.0.1
 openai==1.61
 torch==2.2.0

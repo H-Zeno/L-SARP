@@ -1,4 +1,4 @@
-{   
+{ 
     "1": {"goal": "Go to the biggest tv.", "complexity": 1},
     "2": {"goal": "Place an object in the recycling bin.", "complexity": 1},
     "3": {"goal": "Navigate to the table near the couch.", "complexity": 2},
@@ -6,9 +6,10 @@
     "5": {"goal": "Move the object nearest to the light switch.", "complexity": 4},
     "6": {"goal": "Turn on a light switch and then inspect the lamp positioned closest to this light switch.", "complexity": 4},
     "7": {"goal": "Retrieve the object on the shelf with the TV on it and place it in the recycling bin.", "complexity": 4},
-    "8": {"goal": "Navigate to and inspect each piece of furniture in the room, starting with the closest one.", "complexity": 5},
-    "9": {"goal": "Navigate to and then press each light switch in the room in order from lowest to highest position.", "complexity": 5},
-    "10": {"goal": "Inspect all the drawers and tell me which one has the biggest object inside.", "complexity": 5},
-    "11": {"goal": "Examine the plant to see if it needs water. Please water it when it needs water.", "complexity": 6},
-    "12": {"goal": "Take the biggest object that is stored in one of the drawers, place it on the table after which you should press the light switch on the cabinet and then you are done.", "complexity": 7}
+    "8": {"goal": "Take the picture, place it on the table after which you should press the light switch on the cabinet and then you are done.", "complexity": 5},
+    "9": {"goal": "Navigate to and inspect each piece of furniture in the room, starting with the closest one.", "complexity": 6},
+    "10": {"goal": "Navigate to and then press each light switch in the room in order from lowest to highest position.", "complexity": 6},
+    "11": {"goal": "Inspect the contents of all drawers in the room, ordered from highest to lowest position. Identify and report which drawer contains an object that seems out of place compared to the others in that drawer.", "complexity": 6},
+    "12": {"goal": "Examine the plant to see if it needs water. Please water it when it needs water.", "complexity": 6}
+    
 }

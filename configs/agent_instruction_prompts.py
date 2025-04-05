@@ -72,7 +72,6 @@ Here are the tools that you can use (Plugins) to create a great plan or response
 - mathematical_operations plugin to calculate distances, volumes, etc.
 - the core_memory plugin to save important calculations and conclusions into the core memory (important for the successful completion of the goal/query)
 
-
 Here are the robot's action plugins. These are actions of the robot that you should call, but you can not use them yourself!!!:
 {action_plugins_function_descriptions}
 """
@@ -98,6 +97,7 @@ CREATE_TASK_PLANNER_PROMPT_TEMPLATE = """
 
             The following things have to be written down in the plan as ONE Task:
             - Searcing for an unknown object in the scene: When a specific item is not found in the scene graph, reason about its 3 most likely locations in the scene and explore them.
+            - When describing an iteration over a list of object (e.g. inspect the contents of all drawers in the room), you have to write down the iteration as ONE Task.
 
             Here is the scene graph:
             {scene_graph}
