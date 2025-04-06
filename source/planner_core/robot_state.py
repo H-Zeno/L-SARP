@@ -142,21 +142,25 @@ class RobotState:
     def get_current_image_content(self) -> ImageContent:
         """Converts the image_state to an ImageContent instance."""
 
-        if self.image_state is None or len(self.image_state.shape) == 0:
-            logger.warning("No image state available.")
+        if self.image_state is None or not isinstance(self.image_state, np.ndarray) or len(self.image_state.shape) < 2:
+            logger.warning("No valid image state available.")
             return None
         
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
-            temp_path = temp_file.name
-            image = Image.fromarray(self.image_state)
-            image.save(temp_path)
-        
-        image_content = ImageContent.from_image_file(temp_path)
-        
-        # Optionally, delete the temporary file
-        Path(temp_path).unlink()
-        
-        return image_content
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
+                temp_path = temp_file.name
+                image = Image.fromarray(self.image_state)
+                image.save(temp_path)
+            
+            image_content = ImageContent.from_image_file(temp_path)
+            
+            # Delete the temporary file
+            Path(temp_path).unlink()
+            
+            return image_content
+        except Exception as e:
+            logger.error(f"Error converting image state to ImageContent: {e}")
+            return None
 
     
     def _get_available_cameras(self) -> None:

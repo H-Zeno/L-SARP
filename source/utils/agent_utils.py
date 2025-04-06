@@ -155,7 +155,7 @@ async def invoke_agent(
     # Create message with text and optional image
     message = None
     if input_text_message is not None:
-        if input_image_message is not None:
+        if input_image_message is not None and isinstance(input_image_message, ImageContent):
             # Create a proper ChatMessageContent with role for text+image
             message = ChatMessageContent(role=AuthorRole.USER, items=[TextContent(text=input_text_message), input_image_message])
         else:

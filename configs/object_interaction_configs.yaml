@@ -12,8 +12,8 @@ LIGHT_SWITCH_DISTANCE: 1.10 # the distance to stand from the light switch
 OBJECT_GRASP_DISTANCE: 1.10 # the distance to stand from the object to grasp
 
 # Light Switch Refinement Parameters
-NUM_REFINEMENT_POSES: 3
-NUM_REFINEMENTS_MAX_TRIES: 3
+NUM_REFINEMENT_POSES: 2
+NUM_REFINEMENTS_MAX_TRIES: 1
 BOUNDING_BOX_OPTIMIZATION: true
 REFINEMENT_X_OFFSET: -0.3 # -0.2
 
