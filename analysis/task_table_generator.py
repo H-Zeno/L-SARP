@@ -53,9 +53,8 @@ def generate_task_summary_tables_per_goal(
                         tool_call_str = f'{tool_invocations}. {tool_name}({tool_args_str})'
                         
                     elif agent_response.text_content:
-                        continue
                         # Shorten text for display
-                        text_preview = agent_response.text_content[:50] + '...' if len(agent_response.text_content) > 30 else agent_response.text_content
+                        text_preview = agent_response.text_content
                         if i == n_responses - 1: # Final response
                             text_str = f'Final Response: {text_preview}'
                         else:

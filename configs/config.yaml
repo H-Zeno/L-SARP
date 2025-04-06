@@ -15,7 +15,7 @@ robot_planner_settings:
   termination_keyword: 'goal completed' # has to be lowercase
   max_replanning_count: 5
   active_scene: 'SEMANTIC_CORNER_WITH_BED' # needs to be in all caps, see misc/scenes_and_plugins_config.py
-  goals_path: 'configs/goals_12.json'
+  goals_path: 'configs/goals_11.json'
   task_instruction_mode: 'offline_predefined_instruction' # possible modes: "online_live_instruction", "offline_predefined_instruction"
   path_to_scene_data: 'data_scene/' # relative path to project_root_dir
   task_planner_service_id: 'gemini-2.0-flash'
