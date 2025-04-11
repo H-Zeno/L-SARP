@@ -130,10 +130,32 @@ class ItemInteractionsPlugin:
                 # affordance detection
                 #################################
                 logger.info("affordance detection starting...")
-                affordance_dict = self.light_switch_interaction.light_switch_affordance_detection(
-                    refined_box, color_response, 
-                    config["AFFORDANCE_DICT_LIGHT_SWITCHES"], planner_settings.get("OPENAI_API_KEY")
-                )
+                # Get API key and strip any whitespace
+                api_key = planner_settings.get("OPENAI_API_KEY", "").strip()
+                if not api_key:
+                    # Try to get API key from environment variables as a fallback
+                    logger.warning("API key not found in planner_settings, trying environment variables")
+                    from dotenv import load_dotenv
+                    import os
+                    load_dotenv(".env_core_planner")
+                    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+                
+                if not api_key:
+                    logger.error("No OpenAI API key found. Cannot perform affordance detection.")
+                    # Use default affordance dictionary as fallback
+                    affordance_dict = config["AFFORDANCE_DICT_LIGHT_SWITCHES"]
+                    logger.info(f"Using default affordance dictionary: {affordance_dict}")
+                else:
+                    try:
+                        affordance_dict = self.light_switch_detection.light_switch_affordance_detection(
+                            refined_box, color_response, 
+                            config["AFFORDANCE_DICT_LIGHT_SWITCHES"], api_key
+                        )
+                    except Exception as e:
+                        logger.error(f"Error during affordance detection: {e}")
+                        # Use default affordance dictionary as fallback
+                        affordance_dict = config["AFFORDANCE_DICT_LIGHT_SWITCHES"]
+                        logger.info(f"Using default affordance dictionary: {affordance_dict}")
 
             #################################
             #  light switch interaction based on affordance
