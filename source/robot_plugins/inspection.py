@@ -37,7 +37,6 @@ robot_state = RobotStateSingleton()
 
 # =============================================================================
 # Semantic Kernel
-from semantic_kernel import Kernel
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 from semantic_kernel.connectors.ai.google.google_ai import GoogleAIChatCompletion, GoogleAIChatPromptExecutionSettings
 from semantic_kernel.contents.chat_message_content import ChatMessageContent

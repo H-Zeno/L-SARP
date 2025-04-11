@@ -10,5 +10,4 @@
     "9": {"goal": "Navigate to and then press each light switch in the room in order from lowest to highest position.", "complexity": 6},
     "10": {"goal": "Inspect the contents of all drawers in the room, ordered from highest to lowest position. Identify and report which drawer contains an object that seems out of place compared to the others in that drawer.", "complexity": 6},
     "11": {"goal": "Examine the plant to see if it needs water. Please water it when it needs water.", "complexity": 6}
-    
 }

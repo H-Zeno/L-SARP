@@ -51,15 +51,18 @@ def generate_task_summary_tables_per_goal(
                         tool_args = agent_response.tool_call_content.tool_call_arguments
                         tool_args_str = ', '.join([f'{k}={v}' for k, v in tool_args.items()])
                         tool_call_str = f'{tool_invocations}. {tool_name}({tool_args_str})'
+                        response_list.append(tool_call_str)
                         
                     elif agent_response.text_content:
                         # Shorten text for display
                         text_preview = agent_response.text_content
                         if i == n_responses - 1: # Final response
-                            text_str = f'Final Response: {text_preview}'
+                            text_str = f'{text_preview}'
+                            response_list.append(text_str)
                         else:
                             text_str = f'{text_preview}'
-                    response_list.append(tool_call_str or text_str or "Empty Response")
+                            
+                    # response_list.append(tool_call_str or text_str or "Empty Response")
             else:
                 response_list.append("No agent response logged")
 
@@ -112,6 +115,9 @@ def generate_task_summary_tables_per_goal(
             # Manually escape underscores for LaTeX
             df_latex['Tool Calls / Responses'] = df_latex['Tool Calls / Responses'].str.replace('_', '\\_', regex=False)
 
+        # Add a row at the bottom
+        df_latex.loc[len(df_latex)] = ["---", "Total: ", f"{goal_log.task_planner_agent.total_replanning_count}", f"{goal_log.duration_seconds:.3f}"]
+
         # Generate LaTeX representation from the modified DataFrame
         # NOTE: Requires \usepackage{array} in LaTeX preamble for p{} columns.
         latex_table_goal = df_latex.to_latex(
@@ -149,10 +155,10 @@ def generate_task_summary_tables_per_goal(
             # If the line added was a row (ends with \\), add a midrule after it
             if line.strip().endswith('\\'):
                 task_idx += 1
-                if task_idx <= n_tasks + 1:
+                if task_idx <= n_tasks + 2:
                     processed_lines.append('\\midrule')
                 
-
+        
         # Add \bottomrule
         # processed_lines.append(lines[-1])
         

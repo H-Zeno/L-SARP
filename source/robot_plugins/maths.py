@@ -1,7 +1,7 @@
 import numpy as np
-from typing import Annotated, List, Union
-from utils.recursive_config import Config
 import ast
+from typing import Annotated, List
+from utils.recursive_config import Config
 
 from semantic_kernel.functions.kernel_function_decorator import kernel_function
 
