@@ -1,25 +1,13 @@
 <div align='center'>
-<h2 align="center"> SpotLight: Robotic Scene Understanding through Interaction and Affordance Detection </h2>
+<h2 align="center"> Scene, Spot, Done: A Compound AI System for Interactive Embodied Goal Completion</h2>
 
-<a href="">Tim Engelbracht</a><sup>1</sup>, <a href="https://scholar.google.com/citations?user=feJr7REAAAAJ&hl=en">René Zurbrügg</a><sup>1</sup>, <a href="https://people.inf.ethz.ch/marc.pollefeys/">Marc Pollefeys</a><sup>1,2</sup>, <a href="https://hermannblum.net/">Hermann Blum</a><sup>1,3</sup>, <a href="https://zuriabauer.com/">Zuria Bauer</a><sup>1</sup>
-
-<sup>1</sup>ETH Zurich <sup>2</sup>Microsoft <sup>3</sup>Uni Bonn
-
-![teaser](https://github.com/timengelbracht/SpotLightWebsite/blob/main/SpotLightLogo.png?raw=true)
+ETH Zurich
 
 </div>
 
-[[Project Webpage](https://timengelbracht.github.io/SpotLight/)]
-
-# Spot-Light
-
-Spot-Light is a library and framework built on top of the [Spot-Compose repository](https://github.com/oliver-lemke/spot-compose) codebase to interact with Boston Dynamics' Spot robot. It enables processing point clouds, performing robotic tasks, and updating scene graphs.
+[![Demo Video](https://img.youtube.com/vi/2p3EB9g3hYE/0.jpg)](https://www.youtube.com/watch?v=2p3EB9g3hYE)
 
 ---
-
-# Dataset
-
-The dataset used in the paper is available at [Roboflow](https://universe.roboflow.com/timengelbracht/spotlight-light-switch-dataset)
 
 ## Setup Instructions
 
