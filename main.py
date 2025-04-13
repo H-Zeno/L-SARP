@@ -28,11 +28,6 @@ from LostFound.src.scene_graph import get_scene_graph
 from robot_plugins.replanning import ReplanningPlugin
 from robot_plugins.goal_checker import TaskPlannerGoalChecker
 
-# Local imports
-from configs.scenes_and_plugins_config import Scene
-from configs.agent_instruction_prompts import (
-    TASK_EXECUTION_PROMPT_TEMPLATE
-)
 from utils.agent_utils import invoke_agent
 from utils.recursive_config import Config
 from utils.singletons import RobotLeaseClientSingleton
@@ -44,6 +39,12 @@ from configs.goal_execution_log_models import (
     TaskExecutionAgentLogs,
     GoalCompletionCheckerAgentLogs,
     TaskExecutionLogs,
+)
+
+# Local imports
+from configs.scenes_and_plugins_config import Scene
+from configs.agent_instruction_prompts import (
+    TASK_EXECUTION_PROMPT_TEMPLATE
 )
 
 

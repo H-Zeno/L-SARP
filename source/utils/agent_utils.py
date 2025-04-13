@@ -64,12 +64,14 @@ def _log_agent_response(request: str, messages: List[ChatMessageContent], start_
                         parsed_arguments = json.loads(item.arguments)
                     except json.JSONDecodeError:
                         logger.error("Failed to parse arguments JSON string: %s", item.arguments)
+                        parsed_arguments = {"error, could not parse arguments": item.arguments}
                         # Decide how to handle invalid JSON - maybe log and continue?
                         # For now, we'll keep parsed_arguments as empty dict or raise error?
                 elif isinstance(item.arguments, dict):
                     parsed_arguments = item.arguments
                 else:
                     logger.warning("Unexpected type for item.arguments: %s", type(item.arguments))
+                    parsed_arguments = {"error, could not parse arguments": item.arguments}
                     # Handle unexpected type if necessary
 
                 tool_call_info = ToolCall(
